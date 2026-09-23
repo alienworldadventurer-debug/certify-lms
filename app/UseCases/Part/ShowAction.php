@@ -15,7 +15,9 @@ final class ShowAction
     {
         return $part->load([
             'certification',
-            'chapters' => fn ($q) => $q->withCount('sections'),
+            'chapters' => fn ($q) => $q
+                ->ordered()
+                ->withCount('sections'),
         ]);
     }
 }
