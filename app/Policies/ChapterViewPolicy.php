@@ -30,6 +30,10 @@ class ChapterViewPolicy
             return false;
         }
 
+        if ($part->certification?->status !== CertificationStatus::Published) {
+            return false;
+        }
+
         return $user->enrollments()
             ->where('certification_id', $part->certification_id)
             ->whereIn('status', [
