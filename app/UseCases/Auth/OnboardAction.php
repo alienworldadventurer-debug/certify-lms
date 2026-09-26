@@ -43,7 +43,11 @@ final class OnboardAction
     public function __invoke(Invitation $invitation, array $validated): User
     {
         $user = DB::transaction(function () use ($invitation, $validated) {
-            $invitation->refresh();
+            $invitation = Invitation::query()
+                ->whereKey($invitation->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
             $user = $invitation->user;
 
             if (
@@ -69,6 +73,7 @@ final class OnboardAction
                 'password' => Hash::make($validated['password']),
                 'profile_setup_completed' => true,
                 'email_verified_at' => $now,
+                'status' => UserStatus::InProgress,
             ];
 
             // 受講生のみ Plan 期間を確定。コーチは受講期間という業務概念を持たない。
@@ -100,6 +105,11 @@ final class OnboardAction
                     reason: 'オンボーディング初期付与',
                 );
             }
+
+            $invitation->forceFill([
+                'status' => InvitationStatus::Accepted,
+                'accepted_at' => $now,
+            ])->save();
 
             return $user->refresh();
         });

@@ -146,6 +146,35 @@ class OnboardingTest extends TestCase
         $response->assertViewIs('auth.invitation-invalid');
     }
 
+    public function test_show_returns_gone_when_reusing_url_after_onboarding(): void
+    {
+        $invitation = $this->freshInvitation();
+        $showUrl = $this->signedShowUrl($invitation);
+        $postUrl = $this->postUrl($invitation);
+
+        $initialResponse = $this->get($showUrl);
+
+        $this->post($postUrl, [
+            'name' => '受講太郎',
+            'bio' => 'よろしくお願いします',
+            'password' => 'secret-pass',
+            'password_confirmation' => 'secret-pass',
+        ]);
+
+        $reusedResponse = $this->get($showUrl);
+
+        $initialResponse->assertOk();
+        $initialResponse->assertViewIs('auth.onboarding');
+
+        $reusedResponse->assertStatus(410);
+        $reusedResponse->assertViewIs('auth.invitation-invalid');
+
+        $this->assertDatabaseHas('invitations', [
+            'id' => $invitation->id,
+            'status' => InvitationStatus::Accepted->value,
+        ]);
+    }
+
     public function test_store_updates_existing_invited_user_to_in_progress(): void
     {
         $invitation = $this->freshInvitation();
