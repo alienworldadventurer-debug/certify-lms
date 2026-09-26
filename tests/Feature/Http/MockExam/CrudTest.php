@@ -37,6 +37,27 @@ class CrudTest extends TestCase
         $this->assertSame($admin->id, $mockExam->updated_by_user_id);
     }
 
+    public function test_admin_cannot_create_mock_exam_with_passing_score_over_100(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $cert = Certification::factory()->published()->create();
+
+        $response = $this->actingAs($admin)
+            ->from(route('admin.mock-exams.create'))
+            ->post(route('admin.mock-exams.store'), [
+                'certification_id' => $cert->id,
+                'title' => '範囲外の合格点',
+                'description' => null,
+                'order' => 0,
+                'passing_score' => 101,
+            ]);
+
+        $response->assertSessionHasErrors('passing_score');
+        $this->assertDatabaseMissing('mock_exams', [
+            'title' => '範囲外の合格点',
+        ]);
+    }
+
     public function test_store_silently_drops_time_limit_minutes_field(): void
     {
         $admin = User::factory()->admin()->create();
@@ -102,6 +123,24 @@ class CrudTest extends TestCase
         $this->assertSame('改題後', $mockExam->title);
         $this->assertSame(80, $mockExam->passing_score);
         $this->assertSame($originalCertId, $mockExam->certification_id);
+    }
+
+    public function test_admin_cannot_update_mock_exam_with_passing_score_over_100(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $mockExam = MockExam::factory()->create(['passing_score' => 60]);
+
+        $response = $this->actingAs($admin)
+            ->from(route('admin.mock-exams.edit', $mockExam))
+            ->put(route('admin.mock-exams.update', $mockExam), [
+                'title' => $mockExam->title,
+                'description' => $mockExam->description,
+                'order' => $mockExam->order,
+                'passing_score' => 101,
+            ]);
+
+        $response->assertSessionHasErrors('passing_score');
+        $this->assertSame(60, $mockExam->fresh()->passing_score);
     }
 
     public function test_destroy_rejects_published_mock_exam(): void
