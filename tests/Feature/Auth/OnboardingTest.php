@@ -209,6 +209,7 @@ class OnboardingTest extends TestCase
         ]);
 
         $this->post('/logout');
+        $this->assertGuest();
 
         $reloginResponse = $this->post('/login', [
             'email' => $user->email,
