@@ -11,6 +11,8 @@ use App\Models\CoachAvailability;
 use App\Models\Enrollment;
 use App\Models\Meeting;
 use App\Models\User;
+use App\Services\MeetingQuotaService;
+use App\UseCases\MeetingQuota\ConsumeQuotaAction;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -296,17 +298,22 @@ class MeetingControllerTest extends TestCase
 
     public function test_cancel_refunds_meeting_quota(): void
     {
-        // Arrange: 予約済(残数消費済)面談 1 件。キャンセルで返却記録が作られることを確認する。
+        // Arrange: 予約済面談と受講生を作成する。
         $student = User::factory()->student()->inProgress()->create(['max_meetings' => 5]);
         $coach = User::factory()->coach()->create();
         $meeting = Meeting::factory()->reserved()->forCoach($coach)->forStudent($student)->create([
             'scheduled_at' => now()->addDays(3)->startOfHour(),
         ]);
 
-        // Act
+        // 予約時に消費される 1 回分を記録し、キャンセル前の残数を控える。
+        app(ConsumeQuotaAction::class)($student, $meeting->id);
+        $quotaService = app(MeetingQuotaService::class);
+        $remainingBefore = $quotaService->remaining($student);
+
+        // Act: 予約済面談をキャンセルする。
         $response = $this->actingAs($student)->post(route('meetings.cancel', $meeting));
 
-        // Assert: キャンセル成立 + 消費分 1 回が返却記録として作られる
+        // Assert: キャンセル成立と返却記録を確認する。
         $response->assertRedirect();
         $this->assertSame(MeetingStatus::Canceled, $meeting->fresh()->status);
         $this->assertDatabaseHas('meeting_quota_transactions', [
@@ -315,5 +322,8 @@ class MeetingControllerTest extends TestCase
             'type' => MeetingQuotaTransactionType::Refunded->value,
             'amount' => 1,
         ]);
+
+        // キャンセル後の残数がキャンセル前より 1 回増えていることを確認する。
+        $this->assertSame($remainingBefore + 1, $quotaService->remaining($student));
     }
 }
