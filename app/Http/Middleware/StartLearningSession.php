@@ -28,6 +28,10 @@ final class StartLearningSession
     {
         $response = $next($request);
 
+        if (! $response->isSuccessful()) {
+            return $response;
+        }
+
         $section = $request->route('section');
         $user = $request->user();
 
