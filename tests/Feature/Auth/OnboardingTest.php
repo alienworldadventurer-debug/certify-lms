@@ -208,6 +208,9 @@ class OnboardingTest extends TestCase
             'password_confirmation' => 'secret-pass',
         ]);
 
+        $onboardingResponse->assertRedirect(route('dashboard.index'));
+        $this->assertAuthenticatedAs($user->fresh());
+
         $this->post('/logout');
         $this->assertGuest();
 
@@ -216,7 +219,6 @@ class OnboardingTest extends TestCase
             'password' => 'secret-pass',
         ]);
 
-        $onboardingResponse->assertRedirect(route('dashboard.index'));
         $reloginResponse->assertRedirect(config('fortify.home'));
         $this->assertAuthenticatedAs($user->fresh());
         $this->assertSame(UserStatus::InProgress, $user->fresh()->status);
