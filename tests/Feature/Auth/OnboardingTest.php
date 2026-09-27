@@ -197,6 +197,35 @@ class OnboardingTest extends TestCase
         ]);
     }
 
+    public function test_user_can_relogin_and_access_plan_features_after_onboarding(): void
+    {
+        $invitation = $this->freshInvitation();
+        $user = $invitation->user;
+
+        $onboardingResponse = $this->post($this->postUrl($invitation), [
+            'name' => '受講太郎',
+            'password' => 'secret-pass',
+            'password_confirmation' => 'secret-pass',
+        ]);
+
+        $onboardingResponse->assertRedirect(route('dashboard.index'));
+        $this->assertAuthenticatedAs($user->fresh());
+
+        $this->post('/logout');
+        $this->assertGuest();
+
+        $reloginResponse = $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'secret-pass',
+        ]);
+
+        $reloginResponse->assertRedirect(config('fortify.home'));
+        $this->assertAuthenticatedAs($user->fresh());
+        $this->assertSame(UserStatus::InProgress, $user->fresh()->status);
+
+        $this->get(route('certifications.index'))->assertOk();
+    }
+
     public function test_store_sets_plan_period_from_plan_duration_days(): void
     {
         $plan = $this->plan(durationDays: 120);
