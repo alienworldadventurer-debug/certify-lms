@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
-use App\Enums\CertificationStatus;
 use App\Enums\EnrollmentStatus;
 use App\Enums\UserRole;
 use App\Models\Part;
@@ -23,10 +22,6 @@ class PartViewPolicy
     public function view(User $user, Part $part): bool
     {
         if ($user->role !== UserRole::Student) {
-            return false;
-        }
-
-        if ($part->certification?->status !== CertificationStatus::Published) {
             return false;
         }
 
