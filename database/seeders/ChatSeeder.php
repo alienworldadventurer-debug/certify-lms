@@ -26,6 +26,9 @@ use Illuminate\Database\Seeder;
  *
  * 3. **demo データの一部に未読を残す**: 一覧の未読バッジ表示 / 「未読あり」フィルタ動作の即時確認用。
  *
+ * 4. **固定 student の4件目の Enrollment に自分の未読発言を投入**: 未読集計が自分の発言を誤って含める
+ *    不具合を、相手から新着がない状態で再現できるようにする。
+ *
  * 依存順序: `UserSeeder` → `CertificationSeeder`(担当コーチ割当含む)→ `EnrollmentSeeder` → 本 Seeder。
  */
 final class ChatSeeder extends Seeder
@@ -46,6 +49,7 @@ final class ChatSeeder extends Seeder
 
         $this->seedFixedStudentConversation();
         $this->seedUnreadDemo();
+        $this->seedOwnMessageUnreadDemo();
     }
 
     private function createRoomWithMembers(Enrollment $enrollment): void
@@ -157,5 +161,45 @@ final class ChatSeeder extends Seeder
             $message->forceFill(['created_at' => $createdAt, 'updated_at' => $createdAt])->save();
             $room->update(['last_message_at' => $createdAt]);
         }
+    }
+
+    /**
+     * 固定 student の4件目の Enrollment に本人の発言だけを投入し、未読時刻との前後関係を作る。
+     */
+    private function seedOwnMessageUnreadDemo(): void
+    {
+        $student = User::query()->where('email', 'student@certify-lms.test')->first();
+        if ($student === null) {
+            return;
+        }
+
+        $enrollment = Enrollment::query()
+            ->where('user_id', $student->id)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->skip(3)
+            ->first();
+        if ($enrollment === null) {
+            return;
+        }
+
+        $room = ChatRoom::query()->where('enrollment_id', $enrollment->id)->first();
+        if ($room === null) {
+            return;
+        }
+
+        $createdAt = Carbon::now()->subMinutes(30);
+        $message = ChatMessage::create([
+            'chat_room_id' => $room->id,
+            'sender_user_id' => $student->id,
+            'body' => '前回の学習内容を復習しました。',
+        ]);
+        $message->forceFill(['created_at' => $createdAt, 'updated_at' => $createdAt])->save();
+        $room->update(['last_message_at' => $createdAt]);
+
+        ChatMember::query()
+            ->where('chat_room_id', $room->id)
+            ->where('user_id', $student->id)
+            ->update(['last_read_at' => $createdAt->copy()->subMinute()]);
     }
 }
