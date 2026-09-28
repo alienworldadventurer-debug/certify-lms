@@ -176,6 +176,7 @@ final class ChatSeeder extends Seeder
         $enrollment = Enrollment::query()
             ->where('user_id', $student->id)
             ->orderBy('created_at')
+            ->orderBy('id')
             ->skip(3)
             ->first();
         if ($enrollment === null) {
