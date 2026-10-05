@@ -151,6 +151,20 @@ erDiagram
 
 ## 5. データと Seeder
 
+### 質問掲示板のデータ層
+
+質問掲示板はチャットとは独立し、`QaThread`（`qa_threads`）と `QaReply`（`qa_replies`）で構成する。
+質問は資格・投稿者に属し、回答は質問・投稿者に属する。`QaThreadStatus` は `open`（未解決）と
+`resolved`（解決済）の2値で、解決日時は `resolved_at` に保持する。画面の絞り込み値 `unresolved` は
+DBの `open` に対応する（リクエスト処理層で変換する）。
+
+質問・回答は論理削除を使用せず、質問の完全削除時には外部キーで回答も連動削除する。
+ユーザー・資格の外部キーは `restrictOnDelete` とし、退会や資格の公開状態変更で投稿を削除しない。
+投稿者の `user()` は論理削除済み・退会ステータスのユーザーを返さず、既存Bladeの「不明」表示を使用する。
+回答は `replies()` で作成日時の古い順（同時刻はID順）に取得する。
+`User::qaThreads()` / `qaReplies()` と `Certification::qaThreads()` で逆方向にも参照できる。
+テストデータには `QaThreadFactory` / `QaReplyFactory` を使用し、解決済み質問は `resolved()` で作成できる。
+
 `sail artisan migrate:fresh --seed` で、いつでもデータベースを初期状態に戻せます。Seeder（`database/seeders/`）は次の世界を作ります。
 
 - **固定ログインアカウント**: admin 1 / コーチ 2 / 受講生 1（README の「ログインアカウント」参照）
