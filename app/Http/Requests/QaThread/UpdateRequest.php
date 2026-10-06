@@ -6,6 +6,7 @@ namespace App\Http\Requests\QaThread;
 
 use App\Models\QaThread;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 
 class UpdateRequest extends FormRequest
 {
@@ -13,8 +14,13 @@ class UpdateRequest extends FormRequest
     {
         $thread = $this->route('thread');
 
-        return $thread instanceof QaThread
-            && ($this->user()?->can('update', $thread) ?? false);
+        if (! $thread instanceof QaThread || $this->user() === null) {
+            return false;
+        }
+
+        Gate::forUser($this->user())->authorize('update', $thread);
+
+        return true;
     }
 
     /**

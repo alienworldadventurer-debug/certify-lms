@@ -25,6 +25,7 @@ use App\Http\Controllers\MockExamQuestionController;
 use App\Http\Controllers\MockExamSessionController;
 use App\Http\Controllers\MockExamSessionMonitorController;
 use App\Http\Controllers\PartController;
+use App\Http\Controllers\QaBoardController;
 use App\Http\Controllers\QuestionCategoryController;
 use App\Http\Controllers\QuizHistoryController;
 use App\Http\Controllers\QuizStatsController;
@@ -74,6 +75,28 @@ Route::middleware('auth')->group(function () {
         ->withTrashed()
         ->name('enrollments.show');
 });
+
+// ============================================================
+// 受講中の受講生・コーチ共通 質問掲示板
+// ============================================================
+Route::middleware(['auth', 'role:student,coach', 'active-learning'])
+    ->prefix('qa-board')
+    ->name('qa-board.')
+    ->group(function () {
+        Route::get('/', [QaBoardController::class, 'index'])->name('index');
+        Route::get('create', [QaBoardController::class, 'create'])->name('create');
+        Route::post('/', [QaBoardController::class, 'store'])->name('store');
+        Route::get('{thread}/edit', [QaBoardController::class, 'edit'])->name('edit');
+        Route::patch('{thread}', [QaBoardController::class, 'update'])->name('update');
+        Route::delete('{thread}', [QaBoardController::class, 'destroy'])->name('destroy');
+        Route::post('{thread}/resolve', [QaBoardController::class, 'resolve'])->name('resolve');
+        Route::post('{thread}/unresolve', [QaBoardController::class, 'unresolve'])->name('unresolve');
+        Route::post('{thread}/replies', [QaBoardController::class, 'storeReply'])->name('replies.store');
+        Route::get('{thread}/replies/{reply}/edit', [QaBoardController::class, 'editReply'])->name('replies.edit');
+        Route::patch('{thread}/replies/{reply}', [QaBoardController::class, 'updateReply'])->name('replies.update');
+        Route::delete('{thread}/replies/{reply}', [QaBoardController::class, 'destroyReply'])->name('replies.destroy');
+        Route::get('{thread}', [QaBoardController::class, 'show'])->name('show');
+    });
 
 // ============================================================
 // 受講生専用ルート(受講中ステータスのみ通過、卒業ステータスはロック)
@@ -149,6 +172,16 @@ Route::middleware(['auth', 'role:student', 'active-learning'])
 // admin 専用ルート
 // ============================================================
 Route::middleware(['auth', 'role:admin'])->prefix('admin')->group(function () {
+    // 質問掲示板モデレーション（全資格の閲覧・質問／回答削除のみ）
+    Route::get('qa-board', [QaBoardController::class, 'index'])
+        ->name('admin.qa-board.index');
+    Route::get('qa-board/{thread}', [QaBoardController::class, 'show'])
+        ->name('admin.qa-board.show');
+    Route::delete('qa-board/{thread}', [QaBoardController::class, 'destroy'])
+        ->name('admin.qa-board.destroy');
+    Route::delete('qa-board/{thread}/replies/{reply}', [QaBoardController::class, 'destroyReply'])
+        ->name('admin.qa-board.replies.destroy');
+
     // ユーザー管理
     Route::get('users', [UserController::class, 'index'])->name('admin.users.index');
     Route::get('users/{user}', [UserController::class, 'show'])

@@ -7,6 +7,7 @@ namespace App\Http\Requests\QaReply;
 use App\Models\QaReply;
 use App\Models\QaThread;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 
 class UpdateRequest extends FormRequest
 {
@@ -15,10 +16,15 @@ class UpdateRequest extends FormRequest
         $thread = $this->route('thread');
         $reply = $this->route('reply');
 
-        return $thread instanceof QaThread
-            && $reply instanceof QaReply
-            && $reply->qa_thread_id === $thread->id
-            && ($this->user()?->can('update', $reply) ?? false);
+        if (! $thread instanceof QaThread || ! $reply instanceof QaReply || $this->user() === null) {
+            return false;
+        }
+
+        abort_if($reply->qa_thread_id !== $thread->id, 404);
+
+        Gate::forUser($this->user())->authorize('update', $reply);
+
+        return true;
     }
 
     /**

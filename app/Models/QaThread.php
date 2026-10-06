@@ -41,14 +41,15 @@ class QaThread extends Model
     }
 
     /**
-     * 退会済み投稿者は関連を返さず、既存画面の「不明」表示に委ねる。
+     * 退会済み・論理削除済み投稿者は、既定ユーザーの「不明」表示に置き換える。
      *
      * @return BelongsTo<User, $this>
      */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class)
-            ->where('status', '!=', UserStatus::Withdrawn->value);
+            ->where('status', '!=', UserStatus::Withdrawn->value)
+            ->withDefault(['name' => '不明']);
     }
 
     /**
