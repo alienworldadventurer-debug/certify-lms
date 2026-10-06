@@ -79,7 +79,7 @@ Route::middleware('auth')->group(function () {
 // ============================================================
 // 受講中の受講生・コーチ共通 質問掲示板
 // ============================================================
-Route::middleware(['auth', 'role:student,coach', 'active-learning'])
+Route::middleware(['auth', 'qa-board-access'])
     ->prefix('qa-board')
     ->name('qa-board.')
     ->group(function () {
@@ -173,13 +173,13 @@ Route::middleware(['auth', 'role:student', 'active-learning'])
 // ============================================================
 Route::middleware(['auth', 'role:admin'])->prefix('admin')->group(function () {
     // 質問掲示板モデレーション（全資格の閲覧・質問／回答削除のみ）
-    Route::get('qa-board', [QaBoardController::class, 'index'])
+    Route::get('qa-board', [QaBoardController::class, 'index'])->middleware('qa-board-access')
         ->name('admin.qa-board.index');
-    Route::get('qa-board/{thread}', [QaBoardController::class, 'show'])
+    Route::get('qa-board/{thread}', [QaBoardController::class, 'show'])->middleware('qa-board-access')
         ->name('admin.qa-board.show');
-    Route::delete('qa-board/{thread}', [QaBoardController::class, 'destroy'])
+    Route::delete('qa-board/{thread}', [QaBoardController::class, 'destroy'])->middleware('qa-board-access')
         ->name('admin.qa-board.destroy');
-    Route::delete('qa-board/{thread}/replies/{reply}', [QaBoardController::class, 'destroyReply'])
+    Route::delete('qa-board/{thread}/replies/{reply}', [QaBoardController::class, 'destroyReply'])->middleware('qa-board-access')
         ->name('admin.qa-board.replies.destroy');
 
     // ユーザー管理

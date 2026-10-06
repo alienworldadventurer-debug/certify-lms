@@ -165,6 +165,12 @@ DBの `open` に対応する（リクエスト処理層で変換する）。
 `User::qaThreads()` / `qaReplies()` と `Certification::qaThreads()` で逆方向にも参照できる。
 テストデータには `QaThreadFactory` / `QaReplyFactory` を使用し、解決済み質問は `resolved()` で作成できる。
 
+掲示板のアクセスチェックは `EnsureQaBoardAccess` を認証後・モデル解決前に実行し、
+ロール違い・受講中でないユーザーには質問IDの有無にかかわらず403を返す。
+関連テストは `tests/Feature/Http/QaBoard/`、`tests/Unit/Models/QaModelsTest.php`、
+`tests/Unit/Policies/QaPoliciesTest.php`、`tests/Feature/UseCases/Dashboard/QaSummaryTest.php` に配置する。
+Sail のテストは同じ `testing` DBを使用するため、複数のテストコマンドを同時に起動せず直列に実行する。
+
 `sail artisan migrate:fresh --seed` で、いつでもデータベースを初期状態に戻せます。Seeder（`database/seeders/`）は次の世界を作ります。
 
 - **固定ログインアカウント**: admin 1 / コーチ 2 / 受講生 1（README の「ログインアカウント」参照）
