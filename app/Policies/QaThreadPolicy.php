@@ -95,9 +95,8 @@ class QaThreadPolicy
 
         return match ($user->role) {
             UserRole::Student => true,
-            UserRole::Coach => $certification->coaches()
-                ->where('users.id', $user->id)
-                ->exists(),
+            UserRole::Coach => $certification->loadMissing('coaches')
+                ->coaches->contains('id', $user->id),
             default => false,
         };
     }

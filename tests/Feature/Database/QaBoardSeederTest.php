@@ -54,6 +54,15 @@ class QaBoardSeederTest extends TestCase
         $this->assertSame(1, $threads->where('certification_id', $applied->id)->count());
         $this->assertCount(3, $threads->pluck('user_id')->unique());
 
+        $binarySearch = $threads->firstWhere('title', '2分探索の比較回数が log₂ n になるイメージをつかみたいです');
+        $this->assertNotNull($binarySearch);
+        $this->assertTrue($binarySearch->replies->contains(
+            fn (QaReply $reply): bool => str_contains($reply->body, '8個なら最大4回、16個なら最大5回'),
+        ));
+        $this->assertTrue($binarySearch->replies->contains(
+            fn (QaReply $reply): bool => str_contains($reply->body, 'floor(log₂ n) + 1'),
+        ));
+
         $seeder->run();
 
         $this->assertDatabaseCount('qa_threads', 3);

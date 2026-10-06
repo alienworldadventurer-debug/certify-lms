@@ -10,10 +10,16 @@ final class ShowAction
 {
     public function __invoke(QaThread $thread): QaThread
     {
-        return $thread->load([
+        $thread->loadMissing([
             'certification',
             'user',
             'replies.user',
         ])->loadCount('replies');
+
+        foreach ($thread->replies as $reply) {
+            $reply->setRelation('thread', $thread);
+        }
+
+        return $thread;
     }
 }
