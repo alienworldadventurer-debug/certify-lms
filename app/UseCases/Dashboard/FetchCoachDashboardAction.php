@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\UseCases\Dashboard;
 
+use App\Enums\CertificationStatus;
 use App\Enums\EnrollmentStatus;
 use App\Enums\MeetingStatus;
 use App\Enums\QaThreadStatus;
@@ -40,6 +41,10 @@ final class FetchCoachDashboardAction
     public function __invoke(User $coach): CoachDashboardViewModel
     {
         $coachingCertificationIds = $coach->coachingCertificationIds();
+        $publishedCoachingCertificationIds = $coach->assignedCertifications()
+            ->where('certifications.status', CertificationStatus::Published->value)
+            ->pluck('certifications.id')
+            ->all();
 
         $assignedEnrollments = Enrollment::query()
             ->whereIn('certification_id', $coachingCertificationIds)
@@ -61,8 +66,8 @@ final class FetchCoachDashboardAction
             todayAndTomorrowMeetings: $todayAndTomorrowMeetings,
             unreadChatCount: $this->safe(fn () => $this->chatUnread->roomCountForUser($coach)),
             recentUnreadChatRooms: $this->safe(fn () => $this->fetchRecentUnreadChatRooms($coach)),
-            unansweredQaCount: $this->safe(fn () => $this->fetchUnansweredQaCount($coachingCertificationIds)),
-            recentQaThreads: $this->safe(fn () => $this->fetchRecentUnansweredQaThreads($coachingCertificationIds)),
+            unansweredQaCount: $this->safe(fn () => $this->fetchUnansweredQaCount($publishedCoachingCertificationIds)),
+            recentQaThreads: $this->safe(fn () => $this->fetchRecentUnansweredQaThreads($publishedCoachingCertificationIds)),
         );
     }
 
