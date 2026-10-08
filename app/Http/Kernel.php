@@ -60,6 +60,7 @@ class Kernel extends HttpKernel
         ThrottleRequestsWithRedis::class,
         AuthenticatesSessions::class,
         EnsureQaBoardAccess::class,
+        EnsureUserRole::class,
         SubstituteBindings::class,
         Authorize::class,
     ];
@@ -72,7 +73,7 @@ class Kernel extends HttpKernel
      * @var array<int, class-string|string>
      */
     protected $middleware = [
-        // \App\Http\Middleware\TrustHosts::class,
+            // \App\Http\Middleware\TrustHosts::class,
         TrustProxies::class,
         HandleCors::class,
         PreventRequestsDuringMaintenance::class,
@@ -99,7 +100,7 @@ class Kernel extends HttpKernel
         'api' => [
             EnsureFrontendRequestsAreStateful::class,
             ForceJsonResponse::class,
-            ThrottleRequests::class.':api',
+            ThrottleRequests::class . ':api',
             SubstituteBindings::class,
         ],
     ];
