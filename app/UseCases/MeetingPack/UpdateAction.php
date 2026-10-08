@@ -16,11 +16,13 @@ final class UpdateAction
     public function __invoke(MeetingPack $meetingPack, User $admin, array $validated): MeetingPack
     {
         return DB::transaction(function () use ($meetingPack, $admin, $validated): MeetingPack {
-            $meetingPack->update([
+            $meetingPack->fill([
                 ...$validated,
                 'sort_order' => $validated['sort_order'] ?? 0,
                 'updated_by_user_id' => $admin->id,
             ]);
+            $meetingPack->setUpdatedAt(now());
+            $meetingPack->save();
 
             return $meetingPack->fresh();
         });

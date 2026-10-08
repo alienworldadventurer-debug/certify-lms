@@ -17,18 +17,21 @@ class IndexTest extends TestCase
     public function test_index_filters_keyword_and_status_and_trims_keyword(): void
     {
         $admin = User::factory()->admin()->create();
-        $match = MeetingPack::factory()->published()->create(['name' => 'Premium Coaching']);
-        MeetingPack::factory()->draft()->create(['name' => 'Premium Draft']);
-        MeetingPack::factory()->published()->create(['name' => 'Other Pack']);
+        $match = MeetingPack::factory()->published()->create(['name' => 'Excellent Coaching']);
+        MeetingPack::factory()->draft()->create(['name' => 'Excellent Draft']);
+        MeetingPack::factory()->published()->create([
+            'name' => 'Unrelated name',
+            'description' => 'Coaching appears only in the description',
+        ]);
 
         $response = $this->actingAs($admin)
-            ->get(route('admin.meeting-packs.index', ['keyword' => '  Premium  ', 'status' => 'published']));
+            ->get(route('admin.meeting-packs.index', ['keyword' => '  cellent  ', 'status' => 'published']));
 
         $response->assertOk();
         $response->assertViewHas('plans', function ($plans) use ($match): bool {
             return $plans->total() === 1 && $plans->first()->is($match);
         });
-        $response->assertViewHas('keyword', 'Premium');
+        $response->assertViewHas('keyword', 'cellent');
         $response->assertViewHas('status', 'published');
     }
 
@@ -73,12 +76,20 @@ class IndexTest extends TestCase
             'status' => MeetingPackStatus::Published->value,
         ]));
 
-        $response->assertViewHas('plans', function ($plans): bool {
+        $nextPageUrl = null;
+        $response->assertViewHas('plans', function ($plans) use (&$nextPageUrl): bool {
+            $nextPageUrl = $plans->nextPageUrl();
+
             return $plans->perPage() === 20
                 && $plans->count() === 20
-                && str_contains($plans->nextPageUrl(), 'keyword=Needle')
-                && str_contains($plans->nextPageUrl(), 'status=published');
+                && str_contains($nextPageUrl, 'keyword=Needle')
+                && str_contains($nextPageUrl, 'status=published');
         });
+
+        $this->get($nextPageUrl)
+            ->assertOk()
+            ->assertViewHas('plans', fn ($plans): bool => $plans->count() === 1
+                && $plans->currentPage() === 2);
     }
 
     public function test_invalid_status_is_removed_while_keyword_is_preserved(): void
@@ -98,6 +109,7 @@ class IndexTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         $keyword = str_repeat('x', 150);
+        MeetingPack::factory()->published()->create(['name' => str_repeat('x', 100)]);
 
         $response = $this->actingAs($admin)->get(route('admin.meeting-packs.index', [
             'keyword' => $keyword,
@@ -105,6 +117,20 @@ class IndexTest extends TestCase
 
         $response->assertOk();
         $response->assertViewHas('keyword', $keyword);
+        $response->assertViewHas('plans', fn ($plans): bool => $plans->total() === 0);
+    }
+
+    public function test_status_array_is_removed_while_valid_keyword_is_preserved(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $response = $this->actingAs($admin)->get(route('admin.meeting-packs.index', [
+            'keyword' => 'Keep',
+            'status' => ['draft'],
+        ]));
+
+        $response->assertRedirect(route('admin.meeting-packs.index', ['keyword' => 'Keep']));
+        $response->assertSessionHas('warning', '指定されたステータスは無効です。ステータス条件を適用せずに表示しています。');
     }
 
     public function test_whitespace_only_search_keyword_is_ignored(): void

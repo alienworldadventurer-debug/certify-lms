@@ -34,6 +34,7 @@ class CrudTest extends TestCase
         $this->assertSame('面談パックの説明', $pack->description);
         $this->assertSame('price_example', $pack->stripe_price_id);
         $this->assertSame(0, $pack->sort_order);
+        $this->assertSame(0, $pack->price);
         $this->assertSame(MeetingPackStatus::Draft, $pack->status);
         $this->assertSame($admin->id, $pack->created_by_user_id);
         $this->assertSame($admin->id, $pack->updated_by_user_id);
@@ -79,6 +80,21 @@ class CrudTest extends TestCase
         $response->assertSee('この SKU の購入はまだありません。');
         $response->assertSee($admin->name);
         $response->assertSee($pack->created_at->format('Y-m-d H:i'));
+    }
+
+    public function test_admin_can_open_create_and_edit_forms(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $pack = MeetingPack::factory()->create();
+
+        $this->actingAs($admin)
+            ->get(route('admin.meeting-packs.create'))
+            ->assertOk()
+            ->assertSee('面談パックの新規作成');
+
+        $this->get(route('admin.meeting-packs.edit', $pack))
+            ->assertOk()
+            ->assertSee($pack->name);
     }
 
     public function test_required_values_return_requirement_messages(): void
@@ -142,35 +158,79 @@ class CrudTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         $creator = User::factory()->admin()->create();
-        $pack = MeetingPack::factory()->published()->create([
-            'created_by_user_id' => $creator->id,
-            'updated_by_user_id' => $creator->id,
-            'name' => '更新前',
-        ]);
-        $createdAt = $pack->created_at;
-        $updatedAt = $pack->updated_at;
-        $this->travel(1)->seconds();
-
-        $response = $this->actingAs($admin)->patch(route('admin.meeting-packs.update', $pack), [
+        $payload = [
             'name' => '  更新後  ',
             'description' => '  説明  ',
             'meeting_count' => 10,
             'price' => 5000,
             'stripe_price_id' => '  price_new  ',
             'sort_order' => 20,
+        ];
+
+        foreach (MeetingPackStatus::cases() as $status) {
+            $pack = MeetingPack::factory()->create([
+                'status' => $status,
+                'created_by_user_id' => $creator->id,
+                'updated_by_user_id' => $creator->id,
+                'name' => '更新前',
+                'description' => null,
+                'meeting_count' => 1,
+                'price' => 0,
+                'stripe_price_id' => null,
+                'sort_order' => 0,
+            ]);
+            $createdAt = $pack->created_at;
+            $updatedAt = $pack->updated_at;
+            $this->travel(1)->seconds();
+
+            $response = $this->actingAs($admin)
+                ->patch(route('admin.meeting-packs.update', $pack), $payload);
+
+            $pack->refresh();
+            $response->assertRedirect(route('admin.meeting-packs.show', $pack));
+            $response->assertSessionHas('success', '面談パックを更新しました。');
+            $this->assertSame('更新後', $pack->name);
+            $this->assertSame('説明', $pack->description);
+            $this->assertSame(10, $pack->meeting_count);
+            $this->assertSame(5000, $pack->price);
+            $this->assertSame('price_new', $pack->stripe_price_id);
+            $this->assertSame(20, $pack->sort_order);
+            $this->assertSame($status, $pack->status);
+            $this->assertSame($creator->id, $pack->created_by_user_id);
+            $this->assertSame($admin->id, $pack->updated_by_user_id);
+            $this->assertSame($createdAt->toDateTimeString(), $pack->created_at->toDateTimeString());
+            $this->assertTrue($pack->updated_at->greaterThan($updatedAt));
+        }
+    }
+
+    public function test_update_records_updated_at_when_submitting_unchanged_values(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $pack = MeetingPack::factory()->create([
+            'name' => '同じ値',
+            'description' => '説明',
+            'meeting_count' => 5,
+            'price' => 1000,
+            'stripe_price_id' => 'price_same',
+            'sort_order' => 10,
+            'created_by_user_id' => $admin->id,
+            'updated_by_user_id' => $admin->id,
+        ]);
+        $originalUpdatedAt = $pack->updated_at;
+        $this->travel(2)->seconds();
+
+        $response = $this->actingAs($admin)->patch(route('admin.meeting-packs.update', $pack), [
+            'name' => $pack->name,
+            'description' => $pack->description,
+            'meeting_count' => $pack->meeting_count,
+            'price' => $pack->price,
+            'stripe_price_id' => $pack->stripe_price_id,
+            'sort_order' => $pack->sort_order,
         ]);
 
-        $pack->refresh();
         $response->assertRedirect(route('admin.meeting-packs.show', $pack));
         $response->assertSessionHas('success', '面談パックを更新しました。');
-        $this->assertSame('更新後', $pack->name);
-        $this->assertSame('説明', $pack->description);
-        $this->assertSame('price_new', $pack->stripe_price_id);
-        $this->assertSame(MeetingPackStatus::Published, $pack->status);
-        $this->assertSame($creator->id, $pack->created_by_user_id);
-        $this->assertSame($admin->id, $pack->updated_by_user_id);
-        $this->assertSame($createdAt->toDateTimeString(), $pack->created_at->toDateTimeString());
-        $this->assertTrue($pack->updated_at->greaterThan($updatedAt));
+        $this->assertTrue($pack->fresh()->updated_at->greaterThan($originalUpdatedAt));
     }
 
     public function test_update_rejects_invalid_data_and_preserves_existing_values(): void
@@ -180,23 +240,35 @@ class CrudTest extends TestCase
             'name' => '変更前',
             'price' => 1000,
         ]);
+        $valid = [
+            'name' => '有効な名前',
+            'description' => null,
+            'meeting_count' => 1,
+            'price' => 1000,
+            'stripe_price_id' => null,
+            'sort_order' => 0,
+        ];
+        $invalidCases = [
+            ['name', '   ', 'パック名は必須です。'],
+            ['name', str_repeat('a', 101), 'パック名は100文字以内で入力してください。'],
+            ['description', str_repeat('a', 2001), '説明は2,000文字以内で入力してください。'],
+            ['meeting_count', '', '面談回数は必須です。'],
+            ['meeting_count', '1.5', '面談回数は1〜100の整数で入力してください。'],
+            ['price', 1000001, '価格は0〜1,000,000円の整数で入力してください。'],
+            ['price', '1.5', '価格は0〜1,000,000円の整数で入力してください。'],
+            ['stripe_price_id', str_repeat('a', 256), 'Stripe Price IDは255文字以内で入力してください。'],
+            ['sort_order', -1, '並び順は0〜1,000,000の整数で入力してください。'],
+        ];
 
-        $response = $this->actingAs($admin)
-            ->from(route('admin.meeting-packs.edit', $pack))
-            ->patch(route('admin.meeting-packs.update', $pack), [
-                'name' => str_repeat('a', 101),
-                'description' => null,
-                'meeting_count' => 1,
-                'price' => 1000001,
-                'stripe_price_id' => null,
-                'sort_order' => -1,
-            ]);
+        foreach ($invalidCases as [$field, $value, $message]) {
+            $response = $this->actingAs($admin)
+                ->from(route('admin.meeting-packs.edit', $pack))
+                ->patch(route('admin.meeting-packs.update', $pack), [...$valid, $field => $value]);
 
-        $response->assertSessionHasErrors([
-            'name' => 'パック名は100文字以内で入力してください。',
-            'price' => '価格は0〜1,000,000円の整数で入力してください。',
-            'sort_order' => '並び順は0〜1,000,000の整数で入力してください。',
-        ]);
+            $response->assertSessionHasErrors([$field => $message]);
+        }
+
+        $response->assertSessionHas('_old_input.name', '有効な名前');
         $this->assertSame('変更前', $pack->fresh()->name);
         $this->assertSame(1000, $pack->fresh()->price);
     }

@@ -54,14 +54,19 @@ class FetchStudentDashboardActionTest extends TestCase
     public function test_plan_info_panel_contains_remaining_meetings_and_published_quota_plans(): void
     {
         $student = $this->makeStudentWithPlan(maxMeetings: 5);
-        MeetingPack::factory()->published()->create();
+        $secondPack = MeetingPack::factory()->published()->create(['sort_order' => 20]);
+        $firstPack = MeetingPack::factory()->published()->create(['sort_order' => 10]);
         MeetingPack::factory()->draft()->create();
+        MeetingPack::factory()->archived()->create();
 
         $vm = app(FetchStudentDashboardAction::class)($student);
 
         $this->assertNotNull($vm->planInfo);
         $this->assertSame(5, $vm->planInfo->meetingsRemaining);
-        $this->assertCount(1, $vm->planInfo->meetingPacks);
+        $this->assertSame(
+            [$firstPack->id, $secondPack->id],
+            $vm->planInfo->meetingPacks->modelKeys(),
+        );
     }
 
     public function test_passed_enrollments_are_ordered_by_passed_at_desc(): void
