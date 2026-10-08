@@ -18,7 +18,7 @@ final class UpdateAction
         return DB::transaction(function () use ($meetingPack, $admin, $validated): MeetingPack {
             $meetingPack->fill([
                 ...$validated,
-                'sort_order' => $validated['sort_order'] ?? 0,
+                'sort_order' => $validated['sort_order'] ?? $meetingPack->sort_order,
                 'updated_by_user_id' => $admin->id,
             ]);
             $meetingPack->setUpdatedAt(now());

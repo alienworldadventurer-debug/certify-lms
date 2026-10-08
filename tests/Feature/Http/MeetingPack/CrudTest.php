@@ -233,6 +233,27 @@ class CrudTest extends TestCase
         $this->assertTrue($pack->fresh()->updated_at->greaterThan($originalUpdatedAt));
     }
 
+    public function test_update_preserves_sort_order_when_the_field_is_omitted(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $pack = MeetingPack::factory()->create([
+            'name' => '更新前',
+            'sort_order' => 25,
+        ]);
+
+        $response = $this->actingAs($admin)->patch(route('admin.meeting-packs.update', $pack), [
+            'name' => '更新後',
+            'description' => null,
+            'meeting_count' => $pack->meeting_count,
+            'price' => $pack->price,
+            'stripe_price_id' => $pack->stripe_price_id,
+        ]);
+
+        $response->assertRedirect(route('admin.meeting-packs.show', $pack));
+        $this->assertSame('更新後', $pack->fresh()->name);
+        $this->assertSame(25, $pack->fresh()->sort_order);
+    }
+
     public function test_update_rejects_invalid_data_and_preserves_existing_values(): void
     {
         $admin = User::factory()->admin()->create();
