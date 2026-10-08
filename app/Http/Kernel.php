@@ -60,6 +60,7 @@ class Kernel extends HttpKernel
         ThrottleRequestsWithRedis::class,
         AuthenticatesSessions::class,
         EnsureQaBoardAccess::class,
+        EnsureUserRole::class,
         SubstituteBindings::class,
         Authorize::class,
     ];
