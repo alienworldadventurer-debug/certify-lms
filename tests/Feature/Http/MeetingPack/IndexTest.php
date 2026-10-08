@@ -66,6 +66,23 @@ class IndexTest extends TestCase
         });
     }
 
+    public function test_index_uses_id_as_a_tiebreaker_for_matching_sort_order_and_creation_time(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $createdAt = now()->startOfSecond();
+        $packs = MeetingPack::factory()->count(2)->published()->create([
+            'sort_order' => 5,
+            'created_at' => $createdAt,
+            'updated_at' => $createdAt,
+        ]);
+        $expectedIds = $packs->modelKeys();
+        sort($expectedIds);
+
+        $response = $this->actingAs($admin)->get(route('admin.meeting-packs.index'));
+
+        $response->assertViewHas('plans', fn ($plans): bool => $plans->getCollection()->modelKeys() === $expectedIds);
+    }
+
     public function test_index_has_twenty_items_per_page_and_preserves_query_on_next_page(): void
     {
         $admin = User::factory()->admin()->create();

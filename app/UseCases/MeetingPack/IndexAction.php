@@ -18,6 +18,7 @@ final class IndexAction
             ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [MeetingPackStatus::Published->value])
             ->orderBy('sort_order')
             ->orderByDesc('created_at')
+            ->orderBy('id')
             ->paginate(20)
             ->withQueryString();
     }
