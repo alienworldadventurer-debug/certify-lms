@@ -124,6 +124,7 @@ erDiagram
 | 模試 | mock_exams, mock_exam_questions, mock_exam_question_options, mock_exam_sessions, mock_exam_answers | 模試マスタ・問題・選択肢・受験セッション・解答 |
 | 面談 | meetings, meeting_memos, coach_availabilities | 面談予約・面談メモ・コーチの対応可能時間帯 |
 | チャット | chat_rooms, chat_members, chat_messages | 資格単位のグループチャット（受講生 + 担当コーチ） |
+| 通知 | notifications | 本人宛てのアプリ内通知・既読日時・表示用イベントデータ |
 
 各テーブルには `app/Models/` に対応する Model が 1:1 で存在します。**テーブルの意味やつながりに迷ったら、まず Model ファイルのリレーション定義（belongsTo / hasMany）と PHPDoc を読む**のが近道です。
 
@@ -143,6 +144,7 @@ erDiagram
 | バリデーション | `app/Http/Requests/Section/StoreRequest.php`（rules + 日本語 attributes） |
 | ロールによるアクセス制御 | `app/Http/Middleware/EnsureUserRole.php`（`role:` エイリアスの実体） |
 | メール通知 | `app/Notifications/Auth/ResetPasswordNotification.php`（Notification クラスの実例） |
+| 業務イベント通知 | `NotificationDeliveryService`（配信対象の判定・DB通知保存・同期メール送信）/ `NotificationController`（一覧・既読操作） |
 | 日次バッチ | `app/Console/Commands/`（招待の期限切れ・面談の自動完了など） |
 | Feature テスト（HTTP 経由） | `tests/Feature/Http/{Entity}/` 配下（`actingAs()` でロール別に検証する形） |
 | Unit テスト（Model / Service） | `tests/Unit/Models/SectionTest.php` / `tests/Unit/Services/MeetingAvailabilityServiceTest.php` |

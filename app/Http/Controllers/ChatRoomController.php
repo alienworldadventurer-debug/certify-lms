@@ -11,6 +11,7 @@ use App\Http\Requests\Chat\IndexRequest;
 use App\Http\Requests\Chat\StoreMessageRequest;
 use App\Models\ChatRoom;
 use App\Services\ChatUnreadCountService;
+use App\Services\NotificationDeliveryService;
 use App\UseCases\Chat\ShowAction;
 use App\UseCases\Chat\StoreMessageAction;
 use Illuminate\Contracts\Support\Renderable;
@@ -135,6 +136,7 @@ class ChatRoomController extends Controller
         ChatRoom $room,
         StoreMessageRequest $request,
         StoreMessageAction $action,
+        NotificationDeliveryService $notifications,
     ): RedirectResponse {
         $user = $request->user();
 
@@ -145,7 +147,8 @@ class ChatRoomController extends Controller
             throw new CertificationCoachNotAssignedForChatException;
         }
 
-        $action($user, $room, $request->validated());
+        $message = $action($user, $room, $request->validated());
+        $notifications->chatMessage($message);
 
         return redirect()
             ->route('chat.show', $room)

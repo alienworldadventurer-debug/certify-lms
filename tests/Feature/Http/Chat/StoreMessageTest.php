@@ -12,7 +12,10 @@ use App\Models\Enrollment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -50,6 +53,14 @@ class StoreMessageTest extends TestCase
         ChatMember::factory()->create(['chat_room_id' => $room->id, 'user_id' => $student->id]);
         ChatMember::factory()->create(['chat_room_id' => $room->id, 'user_id' => $coach->id]);
 
+        Mail::shouldReceive('mailer')
+            ->once()
+            ->andThrow(new RuntimeException('mail transport unavailable'));
+        Log::shouldReceive('error')
+            ->once()
+            ->withArgs(fn (string $message, array $context): bool => $message === 'Business event notification email delivery failed.'
+                && isset($context['recipient_id'], $context['notification_id'], $context['exception']));
+
         $response = $this->actingAs($student)
             ->post(route('chat.storeMessage', $room), ['body' => 'こんにちは、相談したいです。']);
 
@@ -59,6 +70,13 @@ class StoreMessageTest extends TestCase
             'sender_user_id' => $student->id,
             'body' => 'こんにちは、相談したいです。',
         ]);
+        $this->assertSame(1, $coach->notifications()->count());
+        $this->assertSame(0, $student->notifications()->count());
+        $this->assertSame(
+            'chat_message_received',
+            $coach->notifications()->first()->data['notification_type'],
+        );
+        $response->assertSessionHas('success', 'メッセージを送信しました。');
 
         Event::assertDispatched(ChatMessageSent::class);
     }
