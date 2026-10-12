@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\MeetingStatus;
 use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use App\Models\ChatMessage;
@@ -46,6 +47,8 @@ final class NotificationDeliveryService
                 'chat_room',
                 $room->id,
                 route('chat.show', $room),
+                sourceType: 'chat_message',
+                sourceId: $message->id,
             );
         }
     }
@@ -73,11 +76,17 @@ final class NotificationDeliveryService
             'qa_thread',
             $thread->id,
             route('qa-board.show', $thread),
+            sourceType: 'qa_reply',
+            sourceId: $reply->id,
         );
     }
 
     public function meetingReserved(Meeting $meeting): void
     {
+        if ($meeting->status !== MeetingStatus::Reserved) {
+            return;
+        }
+
         $meeting->loadMissing(['student', 'coach']);
         $recipient = $meeting->coach;
 
@@ -101,6 +110,11 @@ final class NotificationDeliveryService
 
     public function meetingCanceled(Meeting $meeting, User $actor): void
     {
+        if ($meeting->status !== MeetingStatus::Canceled
+            || (! $actor->is($meeting->student) && ! $actor->is($meeting->coach))) {
+            return;
+        }
+
         $meeting->loadMissing(['student', 'coach']);
         $recipient = $actor->is($meeting->student) ? $meeting->coach : $meeting->student;
 
@@ -131,11 +145,36 @@ final class NotificationDeliveryService
             return null;
         }
 
+        if (isset($data['source_type'])) {
+            $sourceId = $data['source_id'] ?? null;
+
+            if (! is_string($data['source_type'])
+                || ! is_string($sourceId)
+                || ! $this->sourceExists($data['source_type'], $sourceId, $targetId)) {
+                return null;
+            }
+        }
+
         return match ($data['target_type'] ?? null) {
             'chat_room' => $this->chatTarget($user, $targetId),
             'qa_thread' => $this->qaTarget($user, $targetId),
             'meeting' => $this->meetingTarget($user, $targetId),
             default => null,
+        };
+    }
+
+    private function sourceExists(string $sourceType, string $sourceId, string $targetId): bool
+    {
+        return match ($sourceType) {
+            'chat_message' => ChatMessage::query()
+                ->whereKey($sourceId)
+                ->where('chat_room_id', $targetId)
+                ->exists(),
+            'qa_reply' => QaReply::query()
+                ->whereKey($sourceId)
+                ->where('qa_thread_id', $targetId)
+                ->exists(),
+            default => false,
         };
     }
 
@@ -180,6 +219,8 @@ final class NotificationDeliveryService
         string $targetId,
         string $url,
         ?Meeting $meeting = null,
+        ?string $sourceType = null,
+        ?string $sourceId = null,
     ): void {
         $greeting = "{$recipient->name}さん、いつもCertify LMSをご利用いただきありがとうございます。";
         $meetingStartAt = $meeting?->scheduled_at
@@ -202,6 +243,11 @@ final class NotificationDeliveryService
             'target_id' => $targetId,
             'url' => $url,
         ];
+
+        if ($sourceType !== null && $sourceId !== null) {
+            $data['source_type'] = $sourceType;
+            $data['source_id'] = $sourceId;
+        }
 
         if ($meetingStartAt !== null) {
             $data['meeting_start_at'] = $meetingStartAt;

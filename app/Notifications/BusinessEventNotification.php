@@ -19,7 +19,9 @@ final class BusinessEventNotification extends Notification
      *     target_type: string,
      *     target_id: string,
      *     url: string,
-     *     meeting_start_at?: string
+     *     meeting_start_at?: string,
+     *     source_type?: string,
+     *     source_id?: string
      * } $data
      */
     public function __construct(
@@ -46,13 +48,27 @@ final class BusinessEventNotification extends Notification
     {
         $mail = (new MailMessage)
             ->subject($this->data['title'])
-            ->greeting($this->data['greeting'])
-            ->line($this->data['message']);
+            ->greeting($this->escapeMarkdown($this->data['greeting']))
+            ->line($this->escapeMarkdown($this->data['message']));
 
         if (isset($this->data['meeting_start_at'])) {
             $mail->line('面談開始日時：'.$this->data['meeting_start_at'].'（日本時間）');
         }
 
         return $mail->action('内容を確認する', $this->data['url']);
+    }
+
+    private function escapeMarkdown(string $value): string
+    {
+        $escaped = '';
+        $markdownPunctuation = '\\`*_{}[]()#+-.!|>';
+
+        foreach (str_split($value) as $character) {
+            $escaped .= str_contains($markdownPunctuation, $character)
+                ? '\\'.$character
+                : $character;
+        }
+
+        return $escaped;
     }
 }

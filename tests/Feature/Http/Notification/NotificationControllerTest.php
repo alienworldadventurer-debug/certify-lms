@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Http\Notification;
 
+use App\Models\Certification;
+use App\Models\ChatMember;
+use App\Models\ChatRoom;
+use App\Models\Enrollment;
 use App\Models\Meeting;
+use App\Models\QaReply;
+use App\Models\QaThread;
 use App\Models\User;
 use App\Notifications\BusinessEventNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -59,6 +65,18 @@ class NotificationControllerTest extends TestCase
             ->get(route('notifications.index', ['tab' => ['unread']]))
             ->assertRedirect(route('notifications.index'))
             ->assertSessionHas('warning', '通知の表示条件が不正なため、全件を表示しています。');
+
+        $this->get(route('notifications.index', ['tab' => 'unsupported']))
+            ->assertRedirect(route('notifications.index'))
+            ->assertSessionHas('warning', '通知の表示条件が不正なため、全件を表示しています。');
+    }
+
+    public function test_guests_are_redirected_to_login_for_all_notification_operations(): void
+    {
+        $this->get(route('notifications.index'))->assertRedirect(route('login'));
+        $this->post(route('notifications.markAsRead', (string) Str::uuid()))
+            ->assertRedirect(route('login'));
+        $this->post(route('notifications.markAllAsRead'))->assertRedirect(route('login'));
     }
 
     public function test_inactive_users_are_forbidden_before_invalid_tab_or_notification_lookup(): void
@@ -85,6 +103,10 @@ class NotificationControllerTest extends TestCase
             ->assertOk();
 
         $this->actingAs(User::factory()->coach()->graduated()->create())
+            ->get(route('notifications.index'))
+            ->assertOk();
+
+        $this->actingAs(User::factory()->student()->graduated()->create())
             ->get(route('notifications.index'))
             ->assertOk();
     }
@@ -122,6 +144,23 @@ class NotificationControllerTest extends TestCase
         $this->assertTrue($notification->fresh()->read_at->equalTo($firstReadAt));
     }
 
+    public function test_unread_notification_is_marked_read_before_redirecting_to_target(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $coach = User::factory()->coach()->inProgress()->create();
+        $meeting = Meeting::factory()->reserved()->forCoach($coach)->forStudent($student)->create();
+        $notification = $this->createNotification($student, [
+            'target_type' => 'meeting',
+            'target_id' => $meeting->id,
+        ]);
+
+        $this->actingAs($student)
+            ->post(route('notifications.markAsRead', $notification->id))
+            ->assertRedirect(route('meetings.show', $meeting));
+
+        $this->assertNotNull($notification->fresh()->read_at);
+    }
+
     public function test_deleted_or_inaccessible_target_is_read_and_redirects_to_notification_index(): void
     {
         $user = User::factory()->student()->inProgress()->create();
@@ -131,6 +170,80 @@ class NotificationControllerTest extends TestCase
         ]);
 
         $this->actingAs($user)
+            ->post(route('notifications.markAsRead', $notification->id))
+            ->assertRedirect(route('notifications.index'))
+            ->assertSessionHas('warning', '通知の対象ページを表示できないため、通知一覧に戻りました。');
+
+        $this->assertNotNull($notification->fresh()->read_at);
+    }
+
+    public function test_notification_for_deleted_qa_reply_is_read_and_redirects_to_notification_index(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $coach = User::factory()->coach()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $thread = QaThread::factory()->for($student, 'user')->for($certification)->create();
+        $reply = QaReply::factory()->for($coach, 'user')->for($thread, 'thread')->create();
+        $notification = $this->createNotification($student, [
+            'notification_type' => 'qa_reply_received',
+            'target_type' => 'qa_thread',
+            'target_id' => $thread->id,
+            'source_type' => 'qa_reply',
+            'source_id' => $reply->id,
+        ]);
+        $reply->delete();
+
+        $this->actingAs($student)
+            ->post(route('notifications.markAsRead', $notification->id))
+            ->assertRedirect(route('notifications.index'))
+            ->assertSessionHas('warning', '通知の対象ページを表示できないため、通知一覧に戻りました。');
+
+        $this->assertNotNull($notification->fresh()->read_at);
+    }
+
+    public function test_notification_for_deleted_chat_message_is_read_and_redirects_to_notification_index(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $coach = User::factory()->coach()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $enrollment = Enrollment::factory()->for($student)->for($certification)->create();
+        $room = ChatRoom::factory()->for($enrollment)->create();
+        ChatMember::factory()->create(['chat_room_id' => $room->id, 'user_id' => $student->id]);
+        ChatMember::factory()->create(['chat_room_id' => $room->id, 'user_id' => $coach->id]);
+        $message = $room->messages()->create([
+            'sender_user_id' => $coach->id,
+            'body' => 'テストメッセージ',
+        ]);
+        $notification = $this->createNotification($student, [
+            'notification_type' => 'chat_message_received',
+            'target_type' => 'chat_room',
+            'target_id' => $room->id,
+            'source_type' => 'chat_message',
+            'source_id' => $message->id,
+        ]);
+        $message->delete();
+
+        $this->actingAs($student)
+            ->post(route('notifications.markAsRead', $notification->id))
+            ->assertRedirect(route('notifications.index'))
+            ->assertSessionHas('warning', '通知の対象ページを表示できないため、通知一覧に戻りました。');
+
+        $this->assertNotNull($notification->fresh()->read_at);
+    }
+
+    public function test_notification_for_inaccessible_target_is_read_and_redirects_to_notification_index(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $thread = QaThread::factory()->for($student, 'user')->for($certification)->create();
+        $notification = $this->createNotification($student, [
+            'notification_type' => 'qa_reply_received',
+            'target_type' => 'qa_thread',
+            'target_id' => $thread->id,
+        ]);
+        $student->update(['status' => 'graduated']);
+
+        $this->actingAs($student)
             ->post(route('notifications.markAsRead', $notification->id))
             ->assertRedirect(route('notifications.index'))
             ->assertSessionHas('warning', '通知の対象ページを表示できないため、通知一覧に戻りました。');
@@ -155,6 +268,16 @@ class NotificationControllerTest extends TestCase
         $this->assertNotNull($ownUnread->fresh()->read_at);
         $this->assertTrue($ownRead->fresh()->read_at->equalTo($ownReadAt));
         $this->assertNull($otherUnread->fresh()->read_at);
+    }
+
+    public function test_mark_all_as_read_returns_the_same_success_response_when_there_are_no_unread_notifications(): void
+    {
+        $user = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($user)
+            ->post(route('notifications.markAllAsRead'))
+            ->assertRedirect(route('notifications.index'))
+            ->assertSessionHas('success', 'すべての通知を既読にしました。');
     }
 
     /**

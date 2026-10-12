@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Enums\MeetingStatus;
 use App\Enums\UserRole;
 use App\Enums\UserStatus;
+use App\Models\ChatMessage;
 use App\Models\ChatRoom;
 use App\Models\Meeting;
 use App\Models\QaThread;
@@ -29,7 +31,7 @@ class NotificationSeeder extends Seeder
 
             $events = $this->eventsFor($recipient);
 
-            if (count($events) < 3) {
+            if ($events === []) {
                 $this->command?->warn("NotificationSeeder: {$email} の通知対象データが不足しています。");
 
                 continue;
@@ -59,53 +61,55 @@ class NotificationSeeder extends Seeder
         $events = [];
         $room = ChatRoom::query()
             ->whereHas('members', fn ($query) => $query->where('user_id', $recipient->id))
-            ->with('members.user')
-            ->first();
+            ->get()
+            ->first(fn (ChatRoom $room): bool => $recipient->can('view', $room));
 
         if ($room !== null) {
-            $sender = $room->members
-                ->pluck('user')
-                ->first(fn (?User $user): bool => $user !== null
-                    && $user->id !== $recipient->id
-                    && $user->status === UserStatus::InProgress);
+            $message = ChatMessage::query()
+                ->where('chat_room_id', $room->id)
+                ->where('sender_user_id', '!=', $recipient->id)
+                ->whereHas('sender', fn ($query) => $query
+                    ->whereIn('role', [UserRole::Student->value, UserRole::Coach->value])
+                    ->where('status', UserStatus::InProgress->value))
+                ->whereHas('chatRoom.members', fn ($query) => $query
+                    ->whereColumn('chat_members.user_id', 'chat_messages.sender_user_id'))
+                ->with('sender')
+                ->latest()
+                ->first();
 
-            if ($sender !== null) {
+            if ($message !== null) {
+                $senderName = $message->sender->name;
                 $events[] = $this->event(
                     $recipient,
                     'chat_message_received',
-                    "{$sender->name}さんから新しいチャットメッセージが届きました",
-                    "{$sender->name}さんから新しいチャットメッセージが届きました。以下のリンクから内容をご確認ください。",
+                    "{$senderName}さんから新しいチャットメッセージが届きました",
+                    "{$senderName}さんから新しいチャットメッセージが届きました。以下のリンクから内容をご確認ください。",
                     'chat_room',
                     $room->id,
                     route('chat.show', $room),
+                    sourceType: 'chat_message',
+                    sourceId: $message->id,
                 );
             }
         }
 
-        $threadQuery = QaThread::query()
-            ->whereHas('certification.coaches', fn ($query) => $query->where('users.id', $recipient->id))
-            ->with(['certification.coaches', 'replies.user']);
-
-        if ($recipient->role === UserRole::Student) {
-            $threadQuery = QaThread::query()->with(['certification.coaches', 'replies.user']);
-        }
-
-        $thread = $threadQuery->get()->first(function (QaThread $thread) use ($recipient): bool {
-            if (! $recipient->can('view', $thread)) {
-                return false;
-            }
-
-            return $thread->replies->contains(
-                fn ($reply): bool => $reply->user !== null
-                    && $reply->user->id !== $recipient->id
-                    && $reply->user->status === UserStatus::InProgress,
-            );
-        });
+        $thread = $recipient->role === UserRole::Student
+            ? QaThread::query()
+                ->where('user_id', $recipient->id)
+                ->with(['certification.coaches', 'replies.user'])
+                ->get()
+                ->first(fn (QaThread $thread): bool => $recipient->can('view', $thread)
+                    && $thread->replies->contains(fn ($reply): bool => $reply->user !== null
+                        && $reply->user->id !== $recipient->id
+                        && in_array($reply->user->role, [UserRole::Student, UserRole::Coach], true)
+                        && $reply->user->status === UserStatus::InProgress))
+            : null;
 
         if ($thread !== null) {
             $reply = $thread->replies->first(
                 fn ($reply): bool => $reply->user !== null
                     && $reply->user->id !== $recipient->id
+                    && in_array($reply->user->role, [UserRole::Student, UserRole::Coach], true)
                     && $reply->user->status === UserStatus::InProgress,
             );
             $authorName = $reply->user->name;
@@ -117,44 +121,60 @@ class NotificationSeeder extends Seeder
                 'qa_thread',
                 $thread->id,
                 route('qa-board.show', $thread),
+                sourceType: 'qa_reply',
+                sourceId: $reply->id,
             );
         }
 
-        $meetings = $recipient->role === UserRole::Coach
-            ? Meeting::query()->where('coach_id', $recipient->id)->with(['student', 'canceledBy'])->get()
-            : Meeting::query()->where('student_id', $recipient->id)->with(['coach', 'canceledBy'])->get();
+        $meetingQuery = Meeting::query()
+            ->with(['student', 'coach', 'canceledBy'])
+            ->when(
+                $recipient->role === UserRole::Coach,
+                fn ($query) => $query->where('coach_id', $recipient->id),
+                fn ($query) => $query->where('student_id', $recipient->id),
+            );
+        $meetings = $meetingQuery->get();
 
-        $meeting = $meetings->first();
+        if ($recipient->role === UserRole::Coach) {
+            $meeting = $meetings->first(fn (Meeting $meeting): bool => $meeting->status === MeetingStatus::Reserved);
 
-        if ($meeting !== null) {
-            $otherParty = $recipient->role === UserRole::Coach ? $meeting->student : $meeting->coach;
-
-            if ($otherParty instanceof User) {
-                if ($recipient->role === UserRole::Coach) {
-                    $events[] = $this->event(
-                        $recipient,
-                        'meeting_reserved',
-                        "{$meeting->student->name}さんから面談のご予約が入りました",
-                        "{$meeting->student->name}さんとの面談が予約されました。以下のリンクから予約内容をご確認ください。",
-                        'meeting',
-                        $meeting->id,
-                        route('meetings.show', $meeting),
-                        $meeting,
-                    );
-                }
-
-                $actorName = $recipient->role === UserRole::Coach ? $meeting->student->name : $meeting->coach->name;
+            if ($meeting !== null && $meeting->student instanceof User) {
+                $studentName = $meeting->student->name;
                 $events[] = $this->event(
                     $recipient,
-                    'meeting_canceled',
-                    "{$actorName}さんから面談キャンセルのご連絡がありました",
-                    "{$actorName}さんとの面談がキャンセルされました。以下のリンクから詳細をご確認ください。",
+                    'meeting_reserved',
+                    "{$studentName}さんから面談のご予約が入りました",
+                    "{$studentName}さんとの面談が予約されました。以下のリンクから予約内容をご確認ください。",
                     'meeting',
                     $meeting->id,
                     route('meetings.show', $meeting),
                     $meeting,
                 );
             }
+        }
+
+        $canceledMeeting = $meetings->first(function (Meeting $meeting) use ($recipient): bool {
+            if ($meeting->status !== MeetingStatus::Canceled || ! $meeting->canceledBy instanceof User) {
+                return false;
+            }
+
+            return $recipient->role === UserRole::Coach
+                ? $meeting->canceledBy->is($meeting->student)
+                : $meeting->canceledBy->is($meeting->coach);
+        });
+
+        if ($canceledMeeting !== null && $canceledMeeting->canceledBy instanceof User) {
+            $actorName = $canceledMeeting->canceledBy->name;
+            $events[] = $this->event(
+                $recipient,
+                'meeting_canceled',
+                "{$actorName}さんから面談キャンセルのご連絡がありました",
+                "{$actorName}さんとの面談がキャンセルされました。以下のリンクから詳細をご確認ください。",
+                'meeting',
+                $canceledMeeting->id,
+                route('meetings.show', $canceledMeeting),
+                $canceledMeeting,
+            );
         }
 
         return $events;
@@ -172,6 +192,8 @@ class NotificationSeeder extends Seeder
         string $targetId,
         string $url,
         ?Meeting $meeting = null,
+        ?string $sourceType = null,
+        ?string $sourceId = null,
     ): array {
         $greeting = "{$recipient->name}さん、いつもCertify LMSをご利用いただきありがとうございます。";
         $meetingStartAt = $meeting?->scheduled_at
@@ -194,6 +216,11 @@ class NotificationSeeder extends Seeder
             'target_id' => $targetId,
             'url' => $url,
         ];
+
+        if ($sourceType !== null && $sourceId !== null) {
+            $data['source_type'] = $sourceType;
+            $data['source_id'] = $sourceId;
+        }
 
         if ($meetingStartAt !== null) {
             $data['meeting_start_at'] = $meetingStartAt;

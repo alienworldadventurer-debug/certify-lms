@@ -37,7 +37,11 @@ final class NotificationController extends Controller
     ): RedirectResponse {
         $user = $request->user();
         $ownedNotification = $user->notifications()->whereKey($notification)->firstOrFail();
-        $ownedNotification->markAsRead();
+        $user->notifications()
+            ->whereKey($ownedNotification->getKey())
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
+        $ownedNotification->refresh();
 
         $target = $delivery->accessibleTarget($user, $ownedNotification);
 
