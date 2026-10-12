@@ -21,7 +21,6 @@ class IndexRequest extends FormRequest
     {
         return [
             'keyword' => ['nullable', 'string', 'max:100'],
-            'status' => ['nullable', 'string'],
         ];
     }
 
