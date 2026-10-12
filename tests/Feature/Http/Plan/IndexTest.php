@@ -58,6 +58,28 @@ class IndexTest extends TestCase
             ]);
     }
 
+    public function test_index_paginates_plans_with_identical_sort_keys_consistently(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $createdAt = now()->startOfSecond();
+        Plan::factory()->count(21)->create([
+            'sort_order' => 5,
+            'created_at' => $createdAt,
+        ]);
+        $expectedIds = Plan::query()->orderBy('id')->pluck('id')->all();
+
+        $firstPage = $this->actingAs($admin)
+            ->get(route('admin.plans.index'))
+            ->assertOk()
+            ->viewData('plans');
+        $secondPage = $this->get($firstPage->nextPageUrl())->assertOk()->viewData('plans');
+
+        $this->assertSame(
+            $expectedIds,
+            [...$firstPage->getCollection()->modelKeys(), ...$secondPage->getCollection()->modelKeys()],
+        );
+    }
+
     public function test_index_has_twenty_items_per_page_and_preserves_filters(): void
     {
         $admin = User::factory()->admin()->create();
@@ -110,7 +132,13 @@ class IndexTest extends TestCase
 
         $this->actingAs($admin)
             ->get(route('admin.plans.index', ['keyword' => str_repeat('x', 101)]))
-            ->assertSessionHasErrors(['keyword' => '検索キーワードは100文字以内で入力してください。']);
+            ->assertRedirect(route('admin.plans.index'))
+            ->assertSessionHasErrors(['keyword' => '検索キーワードは100文字以内で入力してください。'])
+            ->assertSessionHas('error', '検索キーワードは100文字以内で入力してください。');
+
+        $this->get(route('admin.plans.index'))
+            ->assertOk()
+            ->assertSee('検索キーワードは100文字以内で入力してください。');
     }
 
     public function test_whitespace_only_keyword_is_ignored(): void

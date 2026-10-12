@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Requests\Plan;
 
 use App\Models\Plan;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\ValidationException;
 
 class IndexRequest extends FormRequest
 {
+    protected $redirectRoute = 'admin.plans.index';
+
     public function authorize(): bool
     {
         return $this->user()?->can('viewAny', Plan::class) ?? false;
@@ -42,5 +46,16 @@ class IndexRequest extends FormRequest
             $keyword = trim($keyword);
             $this->merge(['keyword' => $keyword === '' ? null : $keyword]);
         }
+    }
+
+    protected function failedValidation(Validator $validator): void
+    {
+        $response = redirect()
+            ->route('admin.plans.index')
+            ->withInput($this->only(['keyword', 'status']))
+            ->withErrors($validator, $this->errorBag)
+            ->with('error', $validator->errors()->first());
+
+        throw new ValidationException($validator, $response, $this->errorBag);
     }
 }

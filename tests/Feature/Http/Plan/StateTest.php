@@ -7,7 +7,9 @@ namespace Tests\Feature\Http\Plan;
 use App\Enums\PlanStatus;
 use App\Models\Plan;
 use App\Models\User;
+use App\Models\UserPlanLog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class StateTest extends TestCase
@@ -74,5 +76,54 @@ class StateTest extends TestCase
             $this->assertSame($originalUpdatedBy, $plan->fresh()->updated_by_user_id);
             $this->assertSame($originalUpdatedAt, $plan->fresh()->updated_at->toDateTimeString());
         }
+    }
+
+    public function test_archiving_keeps_existing_references_and_removes_plan_from_new_assignment_choices(): void
+    {
+        Mail::fake();
+        $admin = User::factory()->admin()->create();
+        $plan = Plan::factory()->published()->create(['name' => 'Existing Published Plan']);
+        $student = User::factory()->student()->inProgress()->withPlan($plan)->create();
+        $history = UserPlanLog::factory()->for($student)->for($plan)->assigned()->create();
+
+        $this->actingAs($admin)
+            ->post(route('admin.plans.archive', $plan))
+            ->assertRedirect(route('admin.plans.show', $plan));
+
+        $this->assertSame(PlanStatus::Archived, $plan->fresh()->status);
+        $this->assertDatabaseHas('users', [
+            'id' => $student->id,
+            'plan_id' => $plan->id,
+        ]);
+        $this->assertDatabaseHas('user_plan_logs', [
+            'id' => $history->id,
+            'plan_id' => $plan->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.index'))
+            ->assertOk()
+            ->assertDontSee('value="'.$plan->id.'"', false);
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.show', $student))
+            ->assertOk()
+            ->assertDontSee('value="'.$plan->id.'"', false);
+
+        $this->actingAs($admin)
+            ->post(route('admin.invitations.store'), [
+                'email' => 'new-student@example.test',
+                'role' => 'student',
+                'plan_id' => $plan->id,
+            ])
+            ->assertSessionHasErrors('plan_id');
+
+        $this->actingAs($admin)
+            ->post(route('admin.users.extendCourse', $student), ['plan_id' => $plan->id])
+            ->assertSessionHasErrors('plan_id');
+
+        $student->refresh();
+        $this->assertSame($plan->id, $student->plan_id);
+        $this->assertDatabaseHas('user_plan_logs', ['id' => $history->id]);
     }
 }

@@ -99,6 +99,35 @@ class StoreTest extends TestCase
         ]);
     }
 
+    public function test_student_invitation_uses_quota_from_updated_plan(): void
+    {
+        Mail::fake();
+        $admin = User::factory()->admin()->create();
+        $plan = $this->plan(quota: 6);
+
+        $this->actingAs($admin)
+            ->put(route('admin.plans.update', $plan), [
+                'name' => $plan->name,
+                'description' => $plan->description,
+                'duration_days' => 120,
+                'default_meeting_quota' => 9,
+                'sort_order' => $plan->sort_order,
+            ])
+            ->assertRedirect(route('admin.plans.show', $plan));
+
+        $this->post(route('admin.invitations.store'), [
+            'email' => 'updated-plan-student@example.test',
+            'role' => UserRole::Student->value,
+            'plan_id' => $plan->id,
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'updated-plan-student@example.test',
+            'plan_id' => $plan->id,
+            'max_meetings' => 9,
+        ]);
+    }
+
     public function test_cannot_issue_invitation_for_admin_role(): void
     {
         Mail::fake();
