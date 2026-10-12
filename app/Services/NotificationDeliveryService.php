@@ -190,6 +190,7 @@ final class NotificationDeliveryService
             $greeting,
             $message,
             $meetingStartAt === null ? null : "面談開始日時：{$meetingStartAt}（日本時間）",
+            '内容を確認する：'.$url,
         ]));
         $data = [
             'notification_type' => $type,
