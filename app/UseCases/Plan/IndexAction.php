@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\UseCases\Plan;
 
+use App\Enums\PlanStatus;
 use App\Enums\UserRole;
 use App\Enums\UserStatus;
-use App\Enums\PlanStatus;
 use App\Models\Plan;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
