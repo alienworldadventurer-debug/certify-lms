@@ -11,6 +11,7 @@ use App\Http\Requests\QaThread\StoreRequest as StoreThreadRequest;
 use App\Http\Requests\QaThread\UpdateRequest as UpdateThreadRequest;
 use App\Models\QaReply;
 use App\Models\QaThread;
+use App\Services\NotificationDeliveryService;
 use App\UseCases\QaReply\DestroyAction as DestroyReplyAction;
 use App\UseCases\QaReply\StoreAction as StoreReplyAction;
 use App\UseCases\QaReply\UpdateAction as UpdateReplyAction;
@@ -119,8 +120,10 @@ class QaBoardController extends Controller
         QaThread $thread,
         StoreReplyRequest $request,
         StoreReplyAction $action,
+        NotificationDeliveryService $notifications,
     ): RedirectResponse {
         $reply = $action($request->user(), $thread, $request->validated());
+        $notifications->qaReply($reply);
 
         return redirect()
             ->to(route('qa-board.show', $thread).'#reply-'.$reply->id)
