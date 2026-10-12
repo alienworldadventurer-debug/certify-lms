@@ -8,6 +8,7 @@ use App\Enums\MeetingQuotaTransactionType;
 use App\Models\MeetingQuotaTransaction;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * 面談回数の残数集計と履歴取得を提供するステートレス Service。
@@ -26,17 +27,45 @@ final class MeetingQuotaService
      */
     public function remaining(User $user): int
     {
-        $sum = (int) MeetingQuotaTransaction::query()
-            ->where('user_id', $user->id)
-            ->whereIn('type', [
-                MeetingQuotaTransactionType::Consumed,
-                MeetingQuotaTransactionType::Refunded,
-                MeetingQuotaTransactionType::Purchased,
-                MeetingQuotaTransactionType::AdminGrant,
-            ])
-            ->sum('amount');
+        return $this->remainingForUsers(new Collection([$user]))[$user->id];
+    }
 
-        return $user->max_meetings + $sum;
+    /**
+     * 複数受講生の残面談回数を一括集計する。
+     *
+     * @param Collection<int, User> $users
+     *
+     * @return array<string, int>
+     */
+    public function remainingForUsers(Collection $users): array
+    {
+        if ($users->isEmpty()) {
+            return [];
+        }
+
+        $transactionAmounts = MeetingQuotaTransaction::query()
+            ->whereIn('user_id', $users->modelKeys())
+            ->whereIn('type', $this->countedTransactionTypes())
+            ->selectRaw('user_id, SUM(amount) as aggregate_amount')
+            ->groupBy('user_id')
+            ->pluck('aggregate_amount', 'user_id');
+
+        return $users->mapWithKeys(fn (User $user): array => [
+            $user->id => $user->max_meetings + (int) ($transactionAmounts[$user->id] ?? 0),
+        ])->all();
+    }
+
+    /**
+     * @return array<int, MeetingQuotaTransactionType>
+     */
+    private function countedTransactionTypes(): array
+    {
+        return [
+            MeetingQuotaTransactionType::Consumed,
+            MeetingQuotaTransactionType::Refunded,
+            MeetingQuotaTransactionType::Purchased,
+            MeetingQuotaTransactionType::AdminGrant,
+        ];
     }
 
     /**

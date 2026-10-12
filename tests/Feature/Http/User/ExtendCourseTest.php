@@ -55,6 +55,36 @@ class ExtendCourseTest extends TestCase
         $this->assertSame(6 + 3, $fresh->max_meetings, 'max_meetings は extensionPlan.default_meeting_quota 加算される');
     }
 
+    public function test_extension_uses_plan_values_after_plan_is_updated(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $originalPlan = $this->plan(90, 6);
+        $student = User::factory()->inProgress()->withPlan($originalPlan)->create();
+        $extensionPlan = $this->plan(30, 3);
+        $originalExpiresAt = $student->plan_expires_at;
+
+        $this->actingAs($admin)
+            ->put(route('admin.plans.update', $extensionPlan), [
+                'name' => $extensionPlan->name,
+                'description' => $extensionPlan->description,
+                'duration_days' => 60,
+                'default_meeting_quota' => 7,
+                'sort_order' => $extensionPlan->sort_order,
+            ])
+            ->assertRedirect(route('admin.plans.show', $extensionPlan));
+
+        $this->post(route('admin.users.extendCourse', $student), [
+            'plan_id' => $extensionPlan->id,
+        ])->assertRedirect(route('admin.users.show', $student));
+
+        $freshStudent = $student->fresh();
+        $this->assertSame(
+            $originalExpiresAt->copy()->addDays(60)->timestamp,
+            $freshStudent->plan_expires_at->timestamp,
+        );
+        $this->assertSame(6 + 7, $freshStudent->max_meetings);
+    }
+
     public function test_inserts_user_plan_log_with_renewed_event_type(): void
     {
         $admin = User::factory()->admin()->create();
