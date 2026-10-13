@@ -59,6 +59,22 @@ class DashboardControllerTest extends TestCase
         $response->assertViewIs('dashboard.student');
     }
 
+    public function test_student_dashboard_renders_personal_goals(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $enrollment = Enrollment::factory()->for($student)->for($certification)->learning()->create();
+        $enrollment->goals()->create([
+            'title' => 'ダッシュボードに表示する目標',
+        ]);
+
+        $response = $this->actingAs($student)->get(route('dashboard.index'));
+
+        $response->assertOk();
+        $response->assertSee('ダッシュボードに表示する目標');
+        $response->assertSee('進行中');
+    }
+
     public function test_graduated_student_sees_graduated_dashboard_blade(): void
     {
         $graduated = User::factory()->student()->graduated()->create();

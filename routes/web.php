@@ -13,6 +13,7 @@ use App\Http\Controllers\ChatRoomController;
 use App\Http\Controllers\ContentSearchController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EnrollmentController;
+use App\Http\Controllers\EnrollmentGoalController;
 use App\Http\Controllers\EnrollmentManagementController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\LearningHourTargetController;
@@ -84,6 +85,25 @@ Route::middleware('auth')->group(function () {
     Route::get('enrollments/{enrollment}', [EnrollmentController::class, 'show'])
         ->withTrashed()
         ->name('enrollments.show');
+
+    Route::post('enrollments/{enrollment}/goals', [EnrollmentGoalController::class, 'store'])
+        ->middleware('enrollment-goal-student-status')
+        ->name('enrollments.goals.store');
+    Route::get('enrollment-goals/{goal}/edit', [EnrollmentGoalController::class, 'edit'])
+        ->middleware('enrollment-goal-student-status')
+        ->name('enrollment-goals.edit');
+    Route::patch('enrollment-goals/{goal}', [EnrollmentGoalController::class, 'update'])
+        ->middleware('enrollment-goal-student-status')
+        ->name('enrollment-goals.update');
+    Route::delete('enrollment-goals/{goal}', [EnrollmentGoalController::class, 'destroy'])
+        ->middleware('enrollment-goal-student-status')
+        ->name('enrollment-goals.destroy');
+    Route::post('enrollment-goals/{goal}/achieve', [EnrollmentGoalController::class, 'markAchieved'])
+        ->middleware('enrollment-goal-student-status')
+        ->name('enrollment-goals.markAchieved');
+    Route::delete('enrollment-goals/{goal}/achieve', [EnrollmentGoalController::class, 'unmarkAchieved'])
+        ->middleware('enrollment-goal-student-status')
+        ->name('enrollment-goals.unmarkAchieved');
 });
 
 // ============================================================

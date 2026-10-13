@@ -7,6 +7,7 @@ namespace App\Http;
 use App\Http\Middleware\Authenticate;
 use App\Http\Middleware\EncryptCookies;
 use App\Http\Middleware\EnsureActiveLearning;
+use App\Http\Middleware\EnsureEnrollmentGoalStudentStatus;
 use App\Http\Middleware\EnsureQaBoardAccess;
 use App\Http\Middleware\EnsureUserRole;
 use App\Http\Middleware\ForceJsonResponse;
@@ -61,6 +62,7 @@ class Kernel extends HttpKernel
         AuthenticatesSessions::class,
         EnsureQaBoardAccess::class,
         EnsureUserRole::class,
+        EnsureEnrollmentGoalStudentStatus::class,
         SubstituteBindings::class,
         Authorize::class,
     ];
@@ -114,6 +116,7 @@ class Kernel extends HttpKernel
      */
     protected $middlewareAliases = [
         'active-learning' => EnsureActiveLearning::class,
+        'enrollment-goal-student-status' => EnsureEnrollmentGoalStudentStatus::class,
         'qa-board-access' => EnsureQaBoardAccess::class,
         'auth' => Authenticate::class,
         'auth.basic' => AuthenticateWithBasicAuth::class,

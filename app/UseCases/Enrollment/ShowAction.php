@@ -20,6 +20,7 @@ final class ShowAction
             'certification.coaches',
             'certificate',
             'latestStatusLog.changedBy',
+            'goals' => fn ($query) => $query->displayOrder(),
         ]);
     }
 }

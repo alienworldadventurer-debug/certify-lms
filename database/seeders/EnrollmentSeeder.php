@@ -12,6 +12,7 @@ use App\Enums\UserStatus;
 use App\Models\Certificate;
 use App\Models\Certification;
 use App\Models\Enrollment;
+use App\Models\EnrollmentGoal;
 use App\Models\EnrollmentStatusLog;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
@@ -25,7 +26,7 @@ use Illuminate\Support\Carbon;
  *
  * 1. **固定アカウント**(deterministic): 動作確認・スクショ撮影で安定して参照できる「決まったユーザー」の受講登録を生成する。
  *    - `student@certify-lms.test` を CertificationSeeder 投入の published 資格 4 件に learning で登録(ダッシュボードの合格可能性バンド safe / warning / danger / データ不足 を 1 画面で網羅するため)
- *    - 1 件目に達成済 / 未達成の個人目標を 2 件追加(目標 CRUD・達成マーク UI の即時確認用)
+ *    - 各受講登録に達成済 / 未達成、期日あり / なしの個人目標を追加(UI・並び順の確認用)
  *    - coach@(`coach1`) / coach2@ / admin@ が固定 student の Enrollment にメモを残す(他コーチ越境拒否シナリオ用)
  *
  * 2. **状態網羅 demo データ**(Factory + state + count): 一覧 / フィルタ / 状態遷移ボタン / 認可境界が各 status で動くことを実機確認する。
@@ -115,10 +116,12 @@ final class EnrollmentSeeder extends Seeder
                 'changed_reason' => '新規登録',
             ],
         );
+
+        $this->seedGoals($enrollment);
     }
 
     /**
-     * 固定 student に published 資格 4 件を learning で登録し、1 件目に個人目標 + 各件にコーチメモを添える。
+     * 固定 student に published 資格 4 件を learning で登録し、各件に個人目標を添える。
      *
      * 4 件にするのは、ダッシュボードの合格可能性バンド(safe / warning / danger / データ不足)を 1 画面で
      * 網羅させるため(各 Enrollment の模試スコアは MockExamSeeder が帯ごとに作り分ける)。
@@ -152,6 +155,8 @@ final class EnrollmentSeeder extends Seeder
                     'changed_reason' => '新規登録',
                 ],
             );
+
+            $this->seedGoals($enrollment);
         }
     }
 
@@ -201,6 +206,7 @@ final class EnrollmentSeeder extends Seeder
             ]);
 
             $this->seedStatusLogs($enrollment, $pattern['state'], $student);
+            $this->seedGoals($enrollment);
 
             if ($pattern['state'] === 'passed') {
                 $this->issueCertificate($enrollment, $passedAt);
@@ -236,6 +242,50 @@ final class EnrollmentSeeder extends Seeder
                 'changed_at' => now()->subDay(),
                 'changed_reason' => '試験日超過による自動失敗',
             ]);
+        }
+    }
+
+    private function seedGoals(Enrollment $enrollment): void
+    {
+        $goals = [
+            [
+                'title' => '基礎教材を一周する',
+                'description' => '各章の要点を確認しながら学習する。',
+                'target_date' => now()->addDays(14)->toDateString(),
+                'achieved_at' => null,
+            ],
+            [
+                'title' => '過去問を5年分解く',
+                'description' => '間違えた問題は解説を読み直す。',
+                'target_date' => now()->addDays(30)->toDateString(),
+                'achieved_at' => now()->subDays(2),
+            ],
+            [
+                'title' => '模擬試験で合格点を取る',
+                'description' => null,
+                'target_date' => null,
+                'achieved_at' => null,
+            ],
+            [
+                'title' => '学習計画を作成する',
+                'description' => '受験日までの学習時間を計画する。',
+                'target_date' => null,
+                'achieved_at' => now()->subDays(5),
+            ],
+        ];
+
+        foreach ($goals as $goal) {
+            EnrollmentGoal::query()->firstOrCreate(
+                [
+                    'enrollment_id' => $enrollment->id,
+                    'title' => $goal['title'],
+                ],
+                [
+                    'description' => $goal['description'],
+                    'target_date' => $goal['target_date'],
+                    'achieved_at' => $goal['achieved_at'],
+                ],
+            );
         }
     }
 
