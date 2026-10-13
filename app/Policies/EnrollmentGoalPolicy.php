@@ -20,6 +20,10 @@ class EnrollmentGoalPolicy
             return false;
         }
 
+        if ($enrollment->trashed()) {
+            return false;
+        }
+
         return $user->role === UserRole::Student
             && $enrollment->user_id === $user->id
             && $enrollment->status === EnrollmentStatus::Learning;

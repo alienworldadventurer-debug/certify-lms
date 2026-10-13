@@ -174,6 +174,47 @@ class EnrollmentGoalControllerTest extends TestCase
         ]);
     }
 
+    public function test_update_validation_errors_return_to_edit_form_without_changes_or_success_flash(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $enrollment = Enrollment::factory()->for($student)->learning()->create();
+        $goal = $this->createGoal($enrollment, [
+            'title' => '変更前の目標',
+            'description' => '変更前の詳細',
+            'target_date' => '2026-10-20',
+        ]);
+        $editUrl = route('enrollment-goals.edit', $goal);
+
+        $this->actingAs($student)
+            ->from($editUrl)
+            ->patch(route('enrollment-goals.update', $goal), [
+                'title' => str_repeat('x', 101),
+                'description' => '送信した詳細',
+                'target_date' => '2026-10-21',
+            ])
+            ->assertRedirect($editUrl)
+            ->assertSessionHasErrors([
+                'title' => '目標は100文字以内で入力してください。',
+            ])
+            ->assertSessionHas('_old_input.title', str_repeat('x', 101))
+            ->assertSessionHas('_old_input.description', '送信した詳細')
+            ->assertSessionMissing('success');
+
+        $editResponse = $this->get($editUrl);
+        $editResponse->assertOk()
+            ->assertSee('目標は100文字以内で入力してください。')
+            ->assertSee(str_repeat('x', 101), false)
+            ->assertSee('送信した詳細', false)
+            ->assertDontSee('変更前の目標');
+
+        $this->assertDatabaseHas('enrollment_goals', [
+            'id' => $goal->id,
+            'title' => '変更前の目標',
+            'description' => '変更前の詳細',
+            'target_date' => '2026-10-20',
+        ]);
+    }
+
     public function test_achievement_operations_are_idempotent_and_reachieved_again_with_new_time(): void
     {
         $student = User::factory()->student()->inProgress()->create();
@@ -259,14 +300,14 @@ class EnrollmentGoalControllerTest extends TestCase
             User::factory()->student()->withdrawn()->create(),
         ] as $inactiveStudent) {
             $this->actingAs($inactiveStudent)
-                ->post('/enrollment-goals/' . Str::ulid() . '/achieve')
+                ->post('/enrollment-goals/'.Str::ulid().'/achieve')
                 ->assertForbidden();
         }
 
         $this->actingAs($student)
-            ->post('/enrollments/' . Str::ulid() . '/goals', ['title' => '存在しない登録'])
+            ->post('/enrollments/'.Str::ulid().'/goals', ['title' => '存在しない登録'])
             ->assertNotFound();
-        $this->post('/enrollment-goals/' . Str::ulid() . '/achieve')
+        $this->post('/enrollment-goals/'.Str::ulid().'/achieve')
             ->assertNotFound();
 
         $failedEnrollment = Enrollment::factory()->for($student)->failed()->create();
@@ -326,13 +367,27 @@ class EnrollmentGoalControllerTest extends TestCase
         ]);
     }
 
+    public function test_soft_deleted_enrollment_detail_hides_goal_creation_form(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $enrollment = Enrollment::factory()->for($student)->learning()->create();
+        $goal = $this->createGoal($enrollment);
+        $enrollment->delete();
+
+        $this->actingAs($student)
+            ->get(route('enrollments.show', $enrollment))
+            ->assertOk()
+            ->assertSeeText($goal->title)
+            ->assertDontSee(route('enrollments.goals.store', $enrollment));
+    }
+
     /**
      * @param array<string, mixed> $attributes
      */
     private function createGoal(Enrollment $enrollment, array $attributes = []): EnrollmentGoal
     {
         return $enrollment->goals()->create(array_merge([
-            'title' => '目標 ' . Str::ulid(),
+            'title' => '目標 '.Str::ulid(),
             'description' => null,
             'target_date' => null,
             'achieved_at' => null,
