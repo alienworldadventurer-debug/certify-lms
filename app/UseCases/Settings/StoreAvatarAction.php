@@ -20,12 +20,20 @@ final class StoreAvatarAction
 
     public function __invoke(User $user, UploadedFile $avatar): User
     {
-        $oldUrl = $user->avatar_url;
-        $newUrl = $this->storage->store($avatar);
+        $newUrl = null;
 
         try {
-            DB::transaction(function () use ($user, $newUrl): void {
-                $user->update(['avatar_url' => $newUrl]);
+            $oldUrl = DB::transaction(function () use ($user, $avatar, &$newUrl): ?string {
+                $lockedUser = User::query()
+                    ->whereKey($user->getKey())
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $oldUrl = $lockedUser->avatar_url;
+                $newUrl = $this->storage->store($avatar);
+
+                $lockedUser->update(['avatar_url' => $newUrl]);
+
+                return $oldUrl;
             });
         } catch (Throwable $exception) {
             $newPath = $this->storage->pathFromUrl($newUrl);

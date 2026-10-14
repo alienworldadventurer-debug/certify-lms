@@ -6,8 +6,10 @@ namespace App\Http\Requests\Settings;
 
 use App\Enums\UserRole;
 use App\Models\User;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\URL;
+use Symfony\Component\HttpFoundation\ParameterBag;
 
 class UpdateProfileRequest extends FormRequest
 {
@@ -23,12 +25,39 @@ class UpdateProfileRequest extends FormRequest
         foreach (['name', 'bio', 'meeting_url'] as $field) {
             $value = $this->input($field);
             if (is_string($value)) {
-                $trimmed = trim($value);
+                $trimmedValue = preg_replace('/\A[\s\p{Z}]+|[\s\p{Z}]+\z/u', '', $value);
+                $trimmed = is_string($trimmedValue) ? $trimmedValue : $value;
                 $values[$field] = $trimmed === '' ? null : $trimmed;
             }
         }
 
         $this->merge($values);
+    }
+
+    protected function failedValidation(Validator $validator)
+    {
+        $this->removeNonStringValues($this->getInputSource());
+
+        $originalRequest = $this->container->make('request');
+        $originalInput = $originalRequest->isJson()
+            ? $originalRequest->json()
+            : $originalRequest->request;
+        $this->removeNonStringValues($originalInput);
+
+        parent::failedValidation($validator);
+    }
+
+    private function removeNonStringValues(ParameterBag $input): void
+    {
+        $values = $input->all();
+
+        foreach (['name', 'bio', 'meeting_url'] as $field) {
+            if (array_key_exists($field, $values) && ! is_string($values[$field])) {
+                unset($values[$field]);
+            }
+        }
+
+        $input->replace($values);
     }
 
     public function authorize(): bool

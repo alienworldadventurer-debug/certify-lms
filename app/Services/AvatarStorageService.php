@@ -39,19 +39,26 @@ final class AvatarStorageService
         }
 
         $disk = Storage::disk('public');
-        $baseUrl = rtrim($disk->url('avatars'), '/').'/';
+        $urlPath = parse_url($url, PHP_URL_PATH);
+        $baseUrlPath = parse_url($disk->url('avatars'), PHP_URL_PATH);
 
-        if (! Str::startsWith($url, $baseUrl)) {
+        if (! is_string($urlPath) || ! is_string($baseUrlPath)) {
             return null;
         }
 
-        $path = substr($url, strlen($baseUrl));
+        $basePath = rtrim($baseUrlPath, '/').'/';
 
-        if ($path === '' || str_contains($path, '/')) {
+        if (! Str::startsWith($urlPath, $basePath)) {
             return null;
         }
 
-        return 'avatars/'.$path;
+        $filename = rawurldecode(substr($urlPath, strlen($basePath)));
+
+        if (! preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/D', $filename)) {
+            return null;
+        }
+
+        return 'avatars/'.$filename;
     }
 
     public function delete(string $path): void

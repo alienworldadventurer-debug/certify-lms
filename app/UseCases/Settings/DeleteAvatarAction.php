@@ -16,10 +16,13 @@ final class DeleteAvatarAction
 
     public function __invoke(User $user): User
     {
-        $path = $this->storage->pathFromUrl($user->avatar_url);
-
-        DB::transaction(function () use ($user, $path): void {
-            $user->update(['avatar_url' => null]);
+        DB::transaction(function () use ($user): void {
+            $lockedUser = User::query()
+                ->whereKey($user->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $path = $this->storage->pathFromUrl($lockedUser->avatar_url);
+            $lockedUser->update(['avatar_url' => null]);
 
             if ($path !== null) {
                 $this->storage->delete($path);

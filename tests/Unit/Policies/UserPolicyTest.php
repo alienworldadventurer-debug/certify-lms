@@ -19,6 +19,57 @@ class UserPolicyTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_settings_abilities_allow_the_owner_for_every_role(): void
+    {
+        $policy = new UserPolicy;
+
+        foreach (['student', 'coach', 'admin'] as $role) {
+            $user = User::factory()->{$role}()->create();
+
+            foreach ([
+                'viewSettings',
+                'updateProfile',
+                'updateAvatar',
+                'deleteAvatar',
+                'updatePassword',
+            ] as $ability) {
+                $this->assertTrue($policy->{$ability}($user, $user), "{$role} should be allowed to {$ability} their settings.");
+            }
+        }
+    }
+
+    public function test_settings_abilities_deny_another_users_resource(): void
+    {
+        $policy = new UserPolicy;
+        $actor = User::factory()->student()->create();
+        $target = User::factory()->student()->create();
+
+        foreach ([
+            'viewSettings',
+            'updateProfile',
+            'updateAvatar',
+            'deleteAvatar',
+            'updatePassword',
+            'updateMeetingUrl',
+        ] as $ability) {
+            $this->assertFalse($policy->{$ability}($actor, $target), "Another user should not be allowed to {$ability}.");
+        }
+    }
+
+    public function test_only_coaches_can_update_their_own_meeting_url(): void
+    {
+        $policy = new UserPolicy;
+
+        foreach (['student', 'admin'] as $role) {
+            $user = User::factory()->{$role}()->create();
+
+            $this->assertFalse($policy->updateMeetingUrl($user, $user));
+        }
+
+        $coach = User::factory()->coach()->create();
+        $this->assertTrue($policy->updateMeetingUrl($coach, $coach));
+    }
+
     /**
      * 管理者向けユーザー運用 ability × Role のマトリクス検証。
      * Admin のみ全 ability で true、Coach / Student は全 ability で false が期待値。
