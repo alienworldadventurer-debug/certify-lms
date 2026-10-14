@@ -110,7 +110,7 @@ Route::middleware('auth')->group(function () {
 // ============================================================
 // 全ロール共通 — プロフィール / アバター / パスワード設定
 // ============================================================
-Route::middleware(['auth', 'auth.session'])->group(function () {
+Route::middleware('auth')->group(function () {
     Route::get('settings/profile', [SettingsProfileController::class, 'edit'])
         ->name('settings.profile.edit');
     Route::patch('settings/profile', [SettingsProfileController::class, 'update'])
