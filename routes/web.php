@@ -42,6 +42,7 @@ use App\Http\Controllers\SectionQuestionController;
 use App\Http\Controllers\SectionQuizController;
 use App\Http\Controllers\SectionQuizResultController;
 use App\Http\Controllers\Settings\AvailabilityController as SettingsAvailabilityController;
+use App\Http\Controllers\Settings\ProfileController as SettingsProfileController;
 use App\Http\Controllers\Settings\SettingsDefaultEnrollmentController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WeakDrillController;
@@ -104,6 +105,22 @@ Route::middleware('auth')->group(function () {
     Route::delete('enrollment-goals/{goal}/achieve', [EnrollmentGoalController::class, 'unmarkAchieved'])
         ->middleware('enrollment-goal-student-status')
         ->name('enrollment-goals.unmarkAchieved');
+});
+
+// ============================================================
+// 全ロール共通 — プロフィール / アバター / パスワード設定
+// ============================================================
+Route::middleware(['auth', 'auth.session'])->group(function () {
+    Route::get('settings/profile', [SettingsProfileController::class, 'edit'])
+        ->name('settings.profile.edit');
+    Route::patch('settings/profile', [SettingsProfileController::class, 'update'])
+        ->name('settings.profile.update');
+    Route::post('settings/avatar', [SettingsProfileController::class, 'storeAvatar'])
+        ->name('settings.avatar.store');
+    Route::delete('settings/avatar', [SettingsProfileController::class, 'destroyAvatar'])
+        ->name('settings.avatar.destroy');
+    Route::put('settings/password', [SettingsProfileController::class, 'updatePassword'])
+        ->name('settings.password.update');
 });
 
 // ============================================================

@@ -7,9 +7,15 @@ namespace App\Http\Requests\Settings;
 use App\Enums\UserRole;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\URL;
 
 class UpdateProfileRequest extends FormRequest
 {
+    protected function getRedirectUrl(): string
+    {
+        return URL::route('settings.profile.edit', ['tab' => 'profile']);
+    }
+
     protected function prepareForValidation(): void
     {
         $values = [];

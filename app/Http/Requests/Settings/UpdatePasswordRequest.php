@@ -6,9 +6,15 @@ namespace App\Http\Requests\Settings;
 
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\URL;
 
 class UpdatePasswordRequest extends FormRequest
 {
+    protected function getRedirectUrl(): string
+    {
+        return URL::route('settings.profile.edit', ['tab' => 'password']);
+    }
+
     public function authorize(): bool
     {
         $user = $this->user();
