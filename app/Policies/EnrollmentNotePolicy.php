@@ -19,7 +19,7 @@ use Illuminate\Auth\Access\Response;
  * - delete: 作成者本人 / 管理者
  *
  * 受講生には一切の操作を禁止(Blade 側で表示も非表示)。
- * 親の受講登録が削除済みでも、存在する限り権限を維持(削除は cascade)。
+ * 親の受講登録が削除済みの場合は、一覧表示・追加・編集・削除のすべてを禁止する(要件9)。
  */
 class EnrollmentNotePolicy
 {
@@ -29,6 +29,10 @@ class EnrollmentNotePolicy
      */
     public function viewAny(User $user, Enrollment $enrollment): bool|Response
     {
+        if ($enrollment->trashed()) {
+            return Response::deny();
+        }
+
         if ($user->role === UserRole::Student) {
             return Response::deny();
         }
@@ -50,6 +54,10 @@ class EnrollmentNotePolicy
      */
     public function create(User $user, Enrollment $enrollment): bool|Response
     {
+        if ($enrollment->trashed()) {
+            return Response::deny();
+        }
+
         if ($user->role === UserRole::Student) {
             return Response::deny();
         }
@@ -73,6 +81,10 @@ class EnrollmentNotePolicy
      */
     public function update(User $user, EnrollmentNote $note): bool|Response
     {
+        if ($note->enrollment->trashed()) {
+            return Response::deny();
+        }
+
         if ($user->role === UserRole::Student) {
             return Response::deny();
         }
@@ -96,6 +108,10 @@ class EnrollmentNotePolicy
      */
     public function delete(User $user, EnrollmentNote $note): bool|Response
     {
+        if ($note->enrollment->trashed()) {
+            return Response::deny();
+        }
+
         if ($user->role === UserRole::Student) {
             return Response::deny();
         }
