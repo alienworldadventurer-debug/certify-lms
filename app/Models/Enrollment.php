@@ -95,7 +95,9 @@ class Enrollment extends Model
      */
     public function notes(): HasMany
     {
-        return $this->hasMany(EnrollmentNote::class);
+        return $this->hasMany(EnrollmentNote::class)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
     }
 
     /**
@@ -188,7 +190,7 @@ class Enrollment extends Model
             UserRole::Admin => $query,
             UserRole::Coach => $query->whereHas(
                 'certification.coaches',
-                fn($q) => $q->where('users.id', $user->id),
+                fn ($q) => $q->where('users.id', $user->id),
             ),
             UserRole::Student => $query->where('user_id', $user->id),
             default => $query->whereRaw('1 = 0'),

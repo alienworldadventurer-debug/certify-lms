@@ -148,6 +148,24 @@ class EnrollmentNoteControllerTest extends TestCase
         $this->assertDatabaseMissing('enrollment_notes', ['id' => $note->id]);
     }
 
+    public function test_notes_are_ordered_by_created_at_desc_then_id_desc(): void
+    {
+        $enrollment = $this->createEnrollment();
+        $coach = $this->assignCoach($enrollment);
+        $sameTime = now()->subDay();
+        $older = EnrollmentNote::factory()->forEnrollment($enrollment)->byAuthor($coach)
+            ->create(['created_at' => $sameTime->copy()->subHour()]);
+        $lowerId = EnrollmentNote::factory()->forEnrollment($enrollment)->byAuthor($coach)
+            ->create(['created_at' => $sameTime]);
+        $higherId = EnrollmentNote::factory()->forEnrollment($enrollment)->byAuthor($coach)
+            ->create(['created_at' => $sameTime]);
+        $expected = collect([$lowerId->id, $higherId->id])->sortDesc()->values()->all();
+
+        $ids = $enrollment->notes()->orderByDesc('created_at')->pluck('id')->all();
+
+        $this->assertSame([...$expected, $older->id], $ids);
+    }
+
     public function test_detail_page_shows_notes_to_coach_and_admin_but_not_to_student(): void
     {
         $enrollment = $this->createEnrollment();
@@ -204,6 +222,51 @@ class EnrollmentNoteControllerTest extends TestCase
         $this->actingAs($coach)
             ->post(route('enrollments.notes.store', $enrollment), ['body' => '修了後メモ'])
             ->assertSessionHas('success', 'メモを追加しました。');
+    }
+
+    public function test_former_assigned_coach_cannot_edit_update_or_delete_own_note(): void
+    {
+        $enrollment = $this->createEnrollment();
+        $coach = User::factory()->coach()->create();
+        CertificationCoachAssignment::factory()->create([
+            'certification_id' => $enrollment->certification_id,
+            'user_id' => $coach->id,
+            'unassigned_at' => now(),
+        ]);
+        $note = EnrollmentNote::factory()->forEnrollment($enrollment)->byAuthor($coach)->create(['body' => '元']);
+
+        $this->actingAs($coach)->get(route('enrollment-notes.edit', $note))->assertForbidden();
+        $this->actingAs($coach)
+            ->patch(route('enrollment-notes.update', $note), ['body' => '更新後'])
+            ->assertForbidden()
+            ->assertSessionMissing('success');
+        $this->actingAs($coach)
+            ->delete(route('enrollment-notes.destroy', $note))
+            ->assertForbidden()
+            ->assertSessionMissing('success');
+
+        $this->assertDatabaseHas('enrollment_notes', ['id' => $note->id, 'body' => '元']);
+    }
+
+    public function test_student_and_guest_cannot_edit_update_or_delete_note(): void
+    {
+        $enrollment = $this->createEnrollment();
+        $note = EnrollmentNote::factory()->forEnrollment($enrollment)->byAuthor($this->assignCoach($enrollment))->create(['body' => '元']);
+
+        $this->actingAs($enrollment->user)->get(route('enrollment-notes.edit', $note))->assertForbidden();
+        $this->actingAs($enrollment->user)
+            ->patch(route('enrollment-notes.update', $note), ['body' => '更新後'])
+            ->assertForbidden();
+        $this->actingAs($enrollment->user)
+            ->delete(route('enrollment-notes.destroy', $note))
+            ->assertForbidden();
+
+        $this->app['auth']->forgetGuards();
+        $this->get(route('enrollment-notes.edit', $note))->assertRedirect(route('login'));
+        $this->patch(route('enrollment-notes.update', $note), ['body' => '更新後'])->assertRedirect(route('login'));
+        $this->delete(route('enrollment-notes.destroy', $note))->assertRedirect(route('login'));
+
+        $this->assertDatabaseHas('enrollment_notes', ['id' => $note->id, 'body' => '元']);
     }
 
     private function createEnrollment(): Enrollment

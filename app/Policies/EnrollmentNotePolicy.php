@@ -15,8 +15,8 @@ use Illuminate\Auth\Access\Response;
  *
  * - viewAny: 担当コーチ(担当資格の受講登録のみ) / 管理者(全件)
  * - create: 担当コーチ / 管理者
- * - update: 作成者本人 / 管理者
- * - delete: 作成者本人 / 管理者
+ * - update: 担当コーチの作成者本人 / 管理者
+ * - delete: 担当コーチの作成者本人 / 管理者
  *
  * 受講生には一切の操作を禁止(Blade 側で表示も非表示)。
  * 親の受講登録が削除済みの場合は、一覧表示・追加・編集・削除のすべてを禁止する(要件9)。
@@ -94,7 +94,7 @@ class EnrollmentNotePolicy
         }
 
         if ($user->role === UserRole::Coach) {
-            return $note->author_id === $user->id
+            return $this->isAssignedCoach($note->enrollment, $user) && $note->author_id === $user->id
                 ? true
                 : Response::deny();
         }
@@ -121,7 +121,7 @@ class EnrollmentNotePolicy
         }
 
         if ($user->role === UserRole::Coach) {
-            return $note->author_id === $user->id
+            return $this->isAssignedCoach($note->enrollment, $user) && $note->author_id === $user->id
                 ? true
                 : Response::deny();
         }
