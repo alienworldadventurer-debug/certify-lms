@@ -91,6 +91,16 @@ class Enrollment extends Model
     }
 
     /**
+     * @return HasMany<EnrollmentNote, $this>
+     */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(EnrollmentNote::class)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+    }
+
+    /**
      * @return HasMany<MockExamSession, $this>
      */
     public function mockExamSessions(): HasMany
