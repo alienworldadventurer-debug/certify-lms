@@ -91,6 +91,14 @@ class Enrollment extends Model
     }
 
     /**
+     * @return HasMany<EnrollmentNote, $this>
+     */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(EnrollmentNote::class);
+    }
+
+    /**
      * @return HasMany<MockExamSession, $this>
      */
     public function mockExamSessions(): HasMany
@@ -180,7 +188,7 @@ class Enrollment extends Model
             UserRole::Admin => $query,
             UserRole::Coach => $query->whereHas(
                 'certification.coaches',
-                fn ($q) => $q->where('users.id', $user->id),
+                fn($q) => $q->where('users.id', $user->id),
             ),
             UserRole::Student => $query->where('user_id', $user->id),
             default => $query->whereRaw('1 = 0'),
