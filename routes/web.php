@@ -109,6 +109,7 @@ Route::middleware('auth')->group(function () {
 
     // 受講生メモ（コーチ・管理者のみ。認可は FormRequest / Policy で判定）
     Route::post('enrollments/{enrollment}/notes', [EnrollmentNoteController::class, 'store'])
+        ->withTrashed()
         ->name('enrollments.notes.store');
     Route::get('enrollment-notes/{note}/edit', [EnrollmentNoteController::class, 'edit'])
         ->name('enrollment-notes.edit');

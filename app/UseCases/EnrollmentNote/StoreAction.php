@@ -12,7 +12,7 @@ final class StoreAction
     /**
      * @param array{body: string} $validated
      */
-    public function __invoke(Enrollment $enrollment, array $validated, int $authorId): EnrollmentNote
+    public function __invoke(Enrollment $enrollment, array $validated, string $authorId): EnrollmentNote
     {
         return $enrollment->notes()->create([
             'body' => $validated['body'],
