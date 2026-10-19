@@ -66,7 +66,7 @@ final class AdminAnnouncementNotification extends Notification
     private function escapeMarkdown(string $value): string
     {
         $escaped = '';
-        $markdownPunctuation = '\\`*_{}[]()#+-.!|>';
+        $markdownPunctuation = '\\`*_{}[]()#+-.!|><&';
 
         foreach (mb_str_split($value) as $character) {
             $escaped .= str_contains($markdownPunctuation, $character)
