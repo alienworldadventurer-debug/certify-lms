@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use App\Enums\AnnouncementTargetType;
-use App\Enums\UserRole;
-use App\Enums\UserStatus;
 use App\Models\Announcement;
 use App\Models\Certification;
 use App\Models\User;
@@ -92,9 +90,7 @@ class AnnouncementSeeder extends Seeder
 
     private function recipientsFor(array $attributes)
     {
-        $query = User::query()
-            ->where('role', UserRole::Student)
-            ->where('status', UserStatus::InProgress);
+        $query = User::query()->announcementRecipients();
 
         return match ($attributes['target_type']) {
             AnnouncementTargetType::AllStudents => $query->get(),

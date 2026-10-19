@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Enums\UserRole;
-use App\Enums\UserStatus;
 use App\Http\Requests\Announcement\StoreRequest;
 use App\Models\Announcement;
 use App\Models\Certification;
@@ -38,9 +36,9 @@ class AnnouncementController extends Controller
         return view('announcement.management.create', [
             'certifications' => Certification::query()->orderBy('name')->get(),
             'students' => User::query()
-                ->where('role', UserRole::Student)
-                ->where('status', UserStatus::InProgress)
+                ->announcementRecipients()
                 ->orderBy('name')
+                ->orderBy('id')
                 ->get(),
         ]);
     }

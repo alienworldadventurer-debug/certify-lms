@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\UseCases\Announcement;
 
 use App\Enums\AnnouncementTargetType;
-use App\Enums\UserRole;
-use App\Enums\UserStatus;
 use App\Models\Announcement;
 use App\Models\User;
 use App\Notifications\AdminAnnouncementNotification;
@@ -79,9 +77,7 @@ final class StoreAction
      */
     private function recipients(Announcement $announcement): iterable
     {
-        $query = User::query()
-            ->where('role', UserRole::Student)
-            ->where('status', UserStatus::InProgress);
+        $query = User::query()->announcementRecipients();
 
         return match ($announcement->target_type) {
             AnnouncementTargetType::AllStudents => $query->get(),
