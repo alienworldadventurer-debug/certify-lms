@@ -22,7 +22,7 @@ class NotificationPolicy
             && in_array($user->status, [UserStatus::InProgress, UserStatus::Graduated], true);
     }
 
-    public function markAsRead(User $user, DatabaseNotification $notification): bool|Response
+    public function view(User $user, DatabaseNotification $notification): bool|Response
     {
         if (! $this->viewAny($user)) {
             return false;
@@ -34,6 +34,11 @@ class NotificationPolicy
         }
 
         return true;
+    }
+
+    public function markAsRead(User $user, DatabaseNotification $notification): bool|Response
+    {
+        return $this->view($user, $notification);
     }
 
     public function markAllAsRead(User $user): bool
