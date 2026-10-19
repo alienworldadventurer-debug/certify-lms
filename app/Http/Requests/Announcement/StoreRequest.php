@@ -14,6 +14,8 @@ use Illuminate\Validation\Validator;
 
 class StoreRequest extends FormRequest
 {
+    protected $redirectRoute = 'admin.announcements.create';
+
     public function authorize(): bool
     {
         return $this->user()?->can('create', Announcement::class) ?? false;
@@ -62,7 +64,7 @@ class StoreRequest extends FormRequest
             'body.required' => '本文は必須です。',
             'body.max' => '本文は5,000文字以内で入力してください。',
             'target_type.required' => '配信対象は必須です。',
-            'target_type.enum' => '配信対象を正しく指定してください。',
+            'target_type.Illuminate\Validation\Rules\Enum' => '配信対象を正しく指定してください。',
             'target_certification_id.required' => '配信対象が「資格指定」の場合、対象資格は必須です。',
             'target_certification_id.string' => '選択した対象資格は指定できません。',
             'target_certification_id.ulid' => '選択した対象資格は指定できません。',

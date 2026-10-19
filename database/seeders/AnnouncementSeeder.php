@@ -21,21 +21,21 @@ class AnnouncementSeeder extends Seeder
     {
         $admin = User::query()->where('email', 'admin@certify-lms.test')->first();
 
-        if ($admin === null || Announcement::query()->exists()) {
+        if ($admin === null) {
             return;
         }
 
         $certification = Certification::query()->orderBy('id')->first();
         $student = User::query()->where('email', 'student@certify-lms.test')->first();
 
-        $this->dispatch($admin, [
+        $this->dispatchOnce($admin, [
             'title' => '【全体】システムメンテナンスのお知らせ',
             'body' => "平素よりCertify LMSをご利用いただきありがとうございます。\n下記日時にメンテナンスを実施します。",
             'target_type' => AnnouncementTargetType::AllStudents,
         ]);
 
         if ($certification !== null) {
-            $this->dispatch($admin, [
+            $this->dispatchOnce($admin, [
                 'title' => '【資格】学習教材を更新しました',
                 'body' => '対象資格の学習教材を更新しました。学習計画をご確認ください。',
                 'target_type' => AnnouncementTargetType::Certification,
@@ -44,13 +44,27 @@ class AnnouncementSeeder extends Seeder
         }
 
         if ($student !== null) {
-            $this->dispatch($admin, [
+            $this->dispatchOnce($admin, [
                 'title' => '【個別】面談日程についてのご案内',
                 'body' => '面談日程の候補を送付しました。ご確認をお願いします。',
                 'target_type' => AnnouncementTargetType::User,
                 'target_user_id' => $student->id,
             ]);
         }
+    }
+
+    /**
+     * タイトル単位で冪等にする。同じタイトルが既にあれば何もしない。
+     *
+     * @param array{title: string, body: string, target_type: AnnouncementTargetType, target_certification_id?: int, target_user_id?: int} $attributes
+     */
+    private function dispatchOnce(User $admin, array $attributes): void
+    {
+        if (Announcement::query()->where('title', $attributes['title'])->exists()) {
+            return;
+        }
+
+        $this->dispatch($admin, $attributes);
     }
 
     /**

@@ -10,9 +10,12 @@ use App\Models\Certification;
 use App\Models\Enrollment;
 use App\Models\User;
 use App\Notifications\AdminAnnouncementNotification;
+use Illuminate\Contracts\Mail\Factory as MailFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
+use Mockery\MockInterface;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -106,7 +109,7 @@ class AnnouncementControllerTest extends TestCase
             ->andThrow(new RuntimeException('db down'));
 
         $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload())
-            ->assertRedirect()
+            ->assertRedirect(route('admin.announcements.create'))
             ->assertSessionHas('error', 'お知らせの配信に失敗しました。')
             ->assertSessionHasInput('title', 'テスト配信');
 
@@ -114,7 +117,37 @@ class AnnouncementControllerTest extends TestCase
         $this->assertSame(0, $student->notifications()->count());
     }
 
-    public function test_store_validates_required_fields_and_target_consistency(): void
+    public function test_mail_failure_keeps_notifications_and_continues_other_mails(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $first = User::factory()->student()->inProgress()->create();
+        $second = User::factory()->student()->inProgress()->create();
+        $attempts = 0;
+        $this->mock(MailFactory::class, function (MockInterface $mock) use (&$attempts): void {
+            $mock->shouldReceive('mailer->send')->andReturnUsing(function () use (&$attempts): void {
+                $attempts++;
+
+                if ($attempts === 1) {
+                    throw new RuntimeException('smtp down');
+                }
+            });
+        });
+        Log::spy();
+
+        $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload())
+            ->assertRedirect(route('admin.announcements.index'))
+            ->assertSessionHas('success', 'お知らせを配信しました。');
+
+        $this->assertSame(2, $attempts);
+        $this->assertSame(1, $first->notifications()->count());
+        $this->assertSame(1, $second->notifications()->count());
+        $this->assertSame(2, Announcement::query()->sole()->dispatched_count);
+        Log::shouldHaveReceived('error')
+            ->once()
+            ->with('Admin announcement email delivery failed.', \Mockery::type('array'));
+    }
+
+    public function test_store_validates_required_fields_with_exact_messages(): void
     {
         $admin = User::factory()->admin()->create();
 
@@ -122,19 +155,188 @@ class AnnouncementControllerTest extends TestCase
             'title' => '   ',
             'body' => '',
             'target_type' => 'all_students',
-            'target_certification_id' => Certification::factory()->published()->create()->id,
-        ])->assertSessionHasErrors(['title', 'body', 'target_certification_id']);
+            'target_certification_id' => null,
+        ])
+            ->assertRedirect(route('admin.announcements.create'))
+            ->assertSessionHasErrors([
+                'title' => 'タイトルは必須です。',
+                'body' => '本文は必須です。',
+            ]);
+
+        $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
+            'target_type' => 'unknown',
+        ]))->assertSessionHasErrors(['target_type' => '配信対象を正しく指定してください。']);
 
         $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
             'target_type' => AnnouncementTargetType::Certification->value,
-        ]))->assertSessionHasErrors(['target_certification_id']);
+        ]))->assertSessionHasErrors(['target_certification_id' => '配信対象が「資格指定」の場合、対象資格は必須です。']);
 
         $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
             'target_type' => AnnouncementTargetType::User->value,
-            'target_user_id' => User::factory()->coach()->create()->id,
-        ]))->assertSessionHasErrors(['target_user_id']);
+        ]))->assertSessionHasErrors(['target_user_id' => '配信対象が「ユーザー指定」の場合、対象受講生は必須です。']);
 
         $this->assertSame(0, Announcement::query()->count());
+    }
+
+    public function test_unrelated_target_fields_are_rejected_with_exact_messages(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $certification = Certification::factory()->published()->create();
+        $student = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
+            'target_type' => AnnouncementTargetType::AllStudents->value,
+            'target_certification_id' => $certification->id,
+        ]))->assertSessionHasErrors(['target_certification_id' => '配信対象が「全受講生」の場合、資格は指定できません。']);
+
+        $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
+            'target_type' => AnnouncementTargetType::AllStudents->value,
+            'target_user_id' => $student->id,
+        ]))->assertSessionHasErrors(['target_user_id' => '配信対象が「全受講生」の場合、受講生は指定できません。']);
+
+        $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
+            'target_type' => AnnouncementTargetType::Certification->value,
+            'target_certification_id' => $certification->id,
+            'target_user_id' => $student->id,
+        ]))->assertSessionHasErrors(['target_user_id' => '配信対象が「資格指定」の場合、受講生は指定できません。']);
+
+        $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
+            'target_type' => AnnouncementTargetType::User->value,
+            'target_user_id' => $student->id,
+            'target_certification_id' => $certification->id,
+        ]))->assertSessionHasErrors(['target_certification_id' => '配信対象が「ユーザー指定」の場合、資格は指定できません。']);
+
+        $this->assertSame(0, Announcement::query()->count());
+    }
+
+    public function test_user_target_must_be_an_in_progress_student(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $invalidMessage = '選択した対象受講生は指定できません。';
+        $invited = User::factory()->student()->invited()->create();
+        $withdrawn = User::factory()->student()->withdrawn()->create();
+        $deleted = User::factory()->student()->inProgress()->create();
+        $deleted->delete();
+        $coach = User::factory()->coach()->create();
+
+        foreach ([$invited->id, $withdrawn->id, $deleted->id, $coach->id, (string) Str::ulid(), 'not-a-ulid'] as $targetId) {
+            $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
+                'target_type' => AnnouncementTargetType::User->value,
+                'target_user_id' => $targetId,
+            ]))
+                ->assertRedirect(route('admin.announcements.create'))
+                ->assertSessionHasErrors(['target_user_id' => $invalidMessage]);
+        }
+
+        $this->assertSame(0, Announcement::query()->count());
+    }
+
+    public function test_title_and_body_length_limits_return_exact_messages(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
+            'title' => str_repeat('あ', 201),
+            'body' => str_repeat('あ', 5001),
+        ]))->assertSessionHasErrors([
+            'title' => 'タイトルは200文字以内で入力してください。',
+            'body' => '本文は5,000文字以内で入力してください。',
+        ]);
+
+        $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
+            'title' => str_repeat('あ', 200),
+            'body' => str_repeat('あ', 5000),
+        ]))->assertSessionHasNoErrors();
+
+        $this->assertSame(1, Announcement::query()->count());
+    }
+
+    public function test_dispatched_notification_data_matches_spec(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $student = User::factory()->student()->inProgress()->create();
+        $body = "改行を含む本文\n".str_repeat('あ', 100);
+
+        $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
+            'title' => 'お知らせタイトル',
+            'body' => $body,
+        ]))->assertSessionHasNoErrors();
+
+        $announcement = Announcement::query()->sole();
+        $data = $student->notifications()->sole()->data;
+
+        $this->assertSame('admin_announcement', $data['notification_type']);
+        $this->assertSame('お知らせタイトル', $data['title']);
+        $this->assertSame($body, $data['body']);
+        $this->assertSame($announcement->id, $data['announcement_id']);
+        $this->assertSame(1, $announcement->dispatched_count);
+        $this->assertSame(81, mb_strlen($data['message']));
+        $this->assertStringEndsWith('…', $data['message']);
+        $this->assertStringStartsWith('改行を含む本文 ', $data['message']);
+        $this->assertStringNotContainsString("\n", $data['message']);
+    }
+
+    public function test_stored_notifications_do_not_change_after_announcement_changes(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $student = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload([
+            'title' => '元のタイトル',
+        ]))->assertSessionHasNoErrors();
+
+        Announcement::query()->sole()->update(['title' => '変更後のタイトル']);
+
+        $this->assertSame('元のタイトル', $student->notifications()->sole()->data['title']);
+    }
+
+    public function test_announcement_index_page_renders_for_admin(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)->get(route('admin.announcements.index'))->assertOk();
+    }
+
+    public function test_notification_show_rejects_ineligible_users_and_missing_notifications(): void
+    {
+        $invited = User::factory()->student()->invited()->create();
+        $withdrawn = User::factory()->student()->withdrawn()->create();
+        $student = User::factory()->student()->inProgress()->create();
+        $notificationFor = fn (User $user): string => $user->notifications()->create([
+            'id' => (string) Str::uuid(),
+            'type' => AdminAnnouncementNotification::class,
+            'data' => ['notification_type' => 'admin_announcement', 'title' => 'x'],
+        ])->id;
+
+        $this->actingAs($invited)->get(route('notifications.show', $notificationFor($invited)))->assertForbidden();
+        $this->actingAs($withdrawn)->get(route('notifications.show', $notificationFor($withdrawn)))->assertForbidden();
+        $this->actingAs($student)->get(route('notifications.show', (string) Str::uuid()))->assertNotFound();
+    }
+
+    public function test_coach_and_admin_can_open_their_own_announcement_notification(): void
+    {
+        foreach ([User::factory()->coach()->create(), User::factory()->admin()->create()] as $user) {
+            $notification = $user->notifications()->create([
+                'id' => (string) Str::uuid(),
+                'type' => AdminAnnouncementNotification::class,
+                'data' => ['notification_type' => 'admin_announcement', 'title' => 'お知らせ', 'body' => '本文'],
+            ]);
+
+            $this->actingAs($user)->get(route('notifications.show', $notification->id))->assertOk()
+                ->assertSee('本文');
+        }
+    }
+
+    public function test_guest_is_redirected_when_opening_notification_detail(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $notification = $student->notifications()->create([
+            'id' => (string) Str::uuid(),
+            'type' => AdminAnnouncementNotification::class,
+            'data' => ['notification_type' => 'admin_announcement', 'title' => 'x'],
+        ]);
+
+        $this->get(route('notifications.show', $notification->id))->assertRedirect(route('login'));
     }
 
     public function test_title_and_body_length_boundaries(): void

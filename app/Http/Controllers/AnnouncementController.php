@@ -53,7 +53,7 @@ class AnnouncementController extends Controller
             report($exception);
 
             return redirect()
-                ->back()
+                ->route('admin.announcements.create')
                 ->withInput()
                 ->with('error', 'お知らせの配信に失敗しました。');
         }

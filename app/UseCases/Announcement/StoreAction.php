@@ -23,7 +23,9 @@ final class StoreAction
      */
     public function __invoke(User $admin, array $validated): Announcement
     {
-        return DB::transaction(function () use ($admin, $validated): Announcement {
+        $pending = [];
+
+        $announcement = DB::transaction(function () use ($admin, $validated, &$pending): Announcement {
             $targetType = AnnouncementTargetType::from($validated['target_type']);
 
             $announcement = Announcement::query()->create([
@@ -41,32 +43,35 @@ final class StoreAction
                 'created_by' => $admin->id,
             ]);
 
-            $dispatchedCount = 0;
-
             foreach ($this->recipients($announcement) as $recipient) {
                 $notificationId = (string) Str::uuid();
                 $notification = new AdminAnnouncementNotification($announcement, $notificationId);
                 $notification->id = $notificationId;
 
                 Notification::sendNow($recipient, $notification, ['database']);
-                $dispatchedCount++;
-
-                try {
-                    Notification::sendNow($recipient, $notification, ['mail']);
-                } catch (Throwable $exception) {
-                    Log::error('Admin announcement email delivery failed.', [
-                        'announcement_id' => $announcement->id,
-                        'recipient_id' => $recipient->id,
-                        'notification_id' => $notificationId,
-                        'exception' => $exception,
-                    ]);
-                }
+                $pending[] = [$recipient, $notification, $notificationId];
             }
 
-            $announcement->update(['dispatched_count' => $dispatchedCount]);
+            $announcement->update(['dispatched_count' => count($pending)]);
 
             return $announcement;
         });
+
+        // メールは DB コミット後に送信する（ロールバック時に存在しない通知を指すメールを残さないため）
+        foreach ($pending as [$recipient, $notification, $notificationId]) {
+            try {
+                Notification::sendNow($recipient, $notification, ['mail']);
+            } catch (Throwable $exception) {
+                Log::error('Admin announcement email delivery failed.', [
+                    'announcement_id' => $announcement->id,
+                    'recipient_id' => $recipient->id,
+                    'notification_id' => $notificationId,
+                    'exception' => $exception,
+                ]);
+            }
+        }
+
+        return $announcement;
     }
 
     /**

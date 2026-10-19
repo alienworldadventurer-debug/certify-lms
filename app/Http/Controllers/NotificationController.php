@@ -10,6 +10,7 @@ use App\Http\Requests\Notification\MarkAsReadRequest;
 use App\Services\NotificationDeliveryService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 
@@ -34,11 +35,11 @@ final class NotificationController extends Controller
 
     public function show(string $notification, Request $request): View
     {
-        $ownedNotification = $request->user()->notifications()->whereKey($notification)->firstOrFail();
-        Gate::authorize('view', $ownedNotification);
+        $target = DatabaseNotification::query()->whereKey($notification)->firstOrFail();
+        Gate::authorize('view', $target);
 
         return view('notifications.show', [
-            'notification' => $ownedNotification,
+            'notification' => $target,
         ]);
     }
 
