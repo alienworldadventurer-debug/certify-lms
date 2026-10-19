@@ -326,4 +326,18 @@ class User extends Authenticatable
     {
         return $query->whereIn('status', [UserStatus::InProgress, UserStatus::Graduated]);
     }
+
+    /**
+     * お知らせ配信の受信対象（受講中の受講生）に絞り込む。
+     *
+     * @param Builder<User> $query
+     *
+     * @return Builder<User>
+     */
+    public function scopeAnnouncementRecipients(Builder $query): Builder
+    {
+        return $query
+            ->where('role', UserRole::Student)
+            ->where('status', UserStatus::InProgress);
+    }
 }

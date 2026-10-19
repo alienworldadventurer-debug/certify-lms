@@ -9,6 +9,9 @@ use App\Http\Requests\Notification\MarkAllAsReadRequest;
 use App\Http\Requests\Notification\MarkAsReadRequest;
 use App\Services\NotificationDeliveryService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 
 final class NotificationController extends Controller
@@ -30,6 +33,16 @@ final class NotificationController extends Controller
         ]);
     }
 
+    public function show(string $notification, Request $request): View
+    {
+        $target = DatabaseNotification::query()->whereKey($notification)->firstOrFail();
+        Gate::authorize('view', $target);
+
+        return view('notifications.show', [
+            'notification' => $target,
+        ]);
+    }
+
     public function markAsRead(
         string $notification,
         MarkAsReadRequest $request,
@@ -42,6 +55,10 @@ final class NotificationController extends Controller
             ->whereNull('read_at')
             ->update(['read_at' => now()]);
         $ownedNotification->refresh();
+
+        if (($ownedNotification->data['notification_type'] ?? null) === 'admin_announcement') {
+            return redirect()->route('notifications.show', $ownedNotification->getKey());
+        }
 
         $target = $delivery->accessibleTarget($user, $ownedNotification);
 
