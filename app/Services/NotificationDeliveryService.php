@@ -174,6 +174,9 @@ final class NotificationDeliveryService
                 ->whereKey($sourceId)
                 ->where('qa_thread_id', $targetId)
                 ->exists(),
+            // 面談リマインダーは面談自身を source とするため、source と target が同じ面談であることを確認する
+            'meeting' => $sourceId === $targetId
+                && Meeting::query()->whereKey($sourceId)->exists(),
             default => false,
         };
     }
