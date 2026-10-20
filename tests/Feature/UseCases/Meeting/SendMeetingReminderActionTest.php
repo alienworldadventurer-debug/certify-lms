@@ -329,6 +329,18 @@ class SendMeetingReminderActionTest extends TestCase
         $this->assertSame(route('meetings.show', $meeting), $mail->actionUrl);
     }
 
+    public function test_mail_has_no_default_greeting(): void
+    {
+        Notification::fake();
+        $this->meetingAt('2026-10-20 12:30:00');
+
+        $this->runWindow(MeetingReminderWindow::OneHourBefore);
+
+        $mail = Notification::sent($this->student, MeetingReminderNotification::class)->first()->toMail($this->student);
+
+        $this->assertStringNotContainsString('Hello', $mail->render()->toHtml());
+    }
+
     public function test_mail_escapes_markdown_markup_in_topic(): void
     {
         Notification::fake();

@@ -73,8 +73,10 @@ final class MeetingReminderNotification extends Notification
             fn (string $line) => trim($line) !== '',
         ));
 
+        // 仕様上、挨拶文は付けない。空文字だと Laravel 標準の「Hello!」が出るため空白を指定する
         $mail = (new MailMessage)
             ->subject($this->data['title'])
+            ->greeting(' ')
             ->line('日時：'.$this->data['schedule_label'])
             ->line('資格：'.$this->escapeMarkdown($this->data['certification_name']))
             ->line('相談内容：'.$this->escapeMarkdown($topicLines[0] ?? ''));
