@@ -34,6 +34,6 @@ class SendMeetingRemindersCommand extends Command
 
         $this->info("面談リマインダー（{$window->label()}）: 配信 {$counts['delivered']} 件 / スキップ {$counts['skipped']} 件 / 失敗 {$counts['failed']} 件");
 
-        return self::SUCCESS;
+        return $counts['failed'] > 0 ? self::FAILURE : self::SUCCESS;
     }
 }

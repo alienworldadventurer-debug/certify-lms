@@ -59,11 +59,11 @@ final class SendMeetingReminderAction
 
         return match ($window) {
             MeetingReminderWindow::Eve => $query->whereBetween('scheduled_at', [
-                $now->addDay()->startOfDay()->utc(),
-                $now->addDay()->endOfDay()->utc(),
+                $now->addDay()->startOfDay(),
+                $now->addDay()->endOfDay(),
             ]),
-            MeetingReminderWindow::OneHourBefore => $query->where('scheduled_at', '>', $now->utc())
-                ->where('scheduled_at', '<=', $now->addMinutes(60)->utc()),
+            MeetingReminderWindow::OneHourBefore => $query->where('scheduled_at', '>', $now)
+                ->where('scheduled_at', '<=', $now->addMinutes(60)),
         };
     }
 
@@ -139,7 +139,7 @@ final class SendMeetingReminderAction
 
         $start = $meeting->scheduled_at->copy()->setTimezone('Asia/Tokyo');
         $scheduleLabel = $start->format('n月j日').'('.self::JAPANESE_WEEKDAYS[$start->dayOfWeek].')'
-            .' '.$start->format('H:i').'〜'.$start->addMinutes(60)->format('H:i');
+            .' '.$start->format('H:i').'〜'.$start->copy()->addMinutes(60)->format('H:i');
 
         $certificationName = $meeting->enrollment?->certification?->name ?? '';
         $topic = (string) $meeting->topic;
