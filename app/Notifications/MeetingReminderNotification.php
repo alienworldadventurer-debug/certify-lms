@@ -67,11 +67,37 @@ final class MeetingReminderNotification extends Notification
 
     public function toMail($notifiable): MailMessage
     {
-        return (new MailMessage)
+        // MailMessage::line() は文中の改行を空白に潰すため、相談内容は行ごとに分けて改行を保持する
+        $topicLines = array_values(array_filter(
+            preg_split('/\R/u', $this->data['topic']) ?: [''],
+            fn (string $line) => trim($line) !== '',
+        ));
+
+        $mail = (new MailMessage)
             ->subject($this->data['title'])
             ->line('日時：'.$this->data['schedule_label'])
-            ->line('資格：'.$this->data['certification_name'])
-            ->line('相談内容：'.$this->data['topic'])
-            ->action('内容を確認する', $this->data['url']);
+            ->line('資格：'.$this->escapeMarkdown($this->data['certification_name']))
+            ->line('相談内容：'.$this->escapeMarkdown($topicLines[0] ?? ''));
+
+        foreach (array_slice($topicLines, 1) as $line) {
+            $mail->line($this->escapeMarkdown($line));
+        }
+
+        return $mail->action('内容を確認する', $this->data['url']);
+    }
+
+    /** Markdown の記法として解釈されないよう、記号をエスケープする(BusinessEventNotification と同方式)。 */
+    private function escapeMarkdown(string $value): string
+    {
+        $escaped = '';
+        $markdownPunctuation = '\\`*_{}[]()#+-.!|>';
+
+        foreach (str_split($value) as $character) {
+            $escaped .= str_contains($markdownPunctuation, $character)
+                ? '\\'.$character
+                : $character;
+        }
+
+        return $escaped;
     }
 }

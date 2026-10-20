@@ -79,10 +79,14 @@ final class SendMeetingReminderAction
 
         return array_values(array_filter(
             [$meeting->student, $meeting->coach],
-            fn ($user) => $user instanceof User
-                && ! $user->trashed()
-                && ! in_array($user->status, [UserStatus::Invited, UserStatus::Withdrawn], true),
+            fn ($user) => $user instanceof User && $this->canReceive($user),
         ));
+    }
+
+    private function canReceive(User $user): bool
+    {
+        return ! $user->trashed()
+            && ! in_array($user->status, [UserStatus::Invited, UserStatus::Withdrawn], true);
     }
 
     /**
@@ -97,6 +101,7 @@ final class SendMeetingReminderAction
 
                 if ($meeting === null
                     || $recipient === null
+                    || ! $this->canReceive($recipient)
                     || $meeting->status !== MeetingStatus::Reserved
                     || $meeting->scheduled_at->isPast()) {
                     return 'skipped';
@@ -104,6 +109,7 @@ final class SendMeetingReminderAction
 
                 $alreadySent = $recipient->notifications()
                     ->where('data', 'like', '%"notification_type":"meeting_reminder"%')
+                    ->where('data', 'like', '%"source_type":"meeting"%')
                     ->where('data', 'like', '%"source_id":"'.$meeting->id.'"%')
                     ->where('data', 'like', '%"reminder_window":"'.$window->value.'"%')
                     ->exists();
@@ -131,7 +137,11 @@ final class SendMeetingReminderAction
 
     private function buildNotification(Meeting $meeting, User $recipient, MeetingReminderWindow $window): MeetingReminderNotification
     {
-        $meeting->loadMissing(['student', 'coach', 'enrollment.certification']);
+        $meeting->loadMissing([
+            'student' => fn ($query) => $query->withTrashed(),
+            'coach' => fn ($query) => $query->withTrashed(),
+            'enrollment.certification',
+        ]);
 
         $isStudent = $recipient->is($meeting->student);
         $counterpart = $isStudent ? $meeting->coach : $meeting->student;

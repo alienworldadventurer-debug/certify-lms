@@ -16,7 +16,7 @@ use Illuminate\Console\Command;
  */
 class SendMeetingRemindersCommand extends Command
 {
-    protected $signature = 'meetings:send-reminders {--window= : 配信 window（eve / one_hour_before）}';
+    protected $signature = 'notifications:send-meeting-reminders {--window= : 配信 window（eve / one_hour_before）}';
 
     protected $description = '面談リマインダー通知を window 指定で配信する';
 
