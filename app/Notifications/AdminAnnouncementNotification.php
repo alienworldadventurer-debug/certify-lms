@@ -43,7 +43,7 @@ final class AdminAnnouncementNotification extends Notification
     {
         $mail = (new MailMessage)
             ->subject('【Certify LMS】'.$this->announcement->title)
-            ->greeting($this->escapeMarkdown("{$notifiable->name}さん、いつもCertify LMSをご利用いただきありがとうございます。"));
+            ->greeting('管理者からのお知らせ');
 
         foreach (preg_split('/\r\n|\r|\n/', $this->announcement->body) ?: [] as $line) {
             $mail->line($line === '' ? ' ' : $this->escapeMarkdown($line));

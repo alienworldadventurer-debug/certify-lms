@@ -461,6 +461,7 @@ class AnnouncementControllerTest extends TestCase
         $mail = (new AdminAnnouncementNotification($announcement, (string) Str::uuid()))->toMail($student);
 
         $this->assertSame('【Certify LMS】重要', $mail->subject);
+        $this->assertSame('管理者からのお知らせ', $mail->greeting);
         $this->assertContains('\# 見出し', $mail->introLines);
         $this->assertContains('\<b\>太字\</b\>', $mail->introLines);
     }
