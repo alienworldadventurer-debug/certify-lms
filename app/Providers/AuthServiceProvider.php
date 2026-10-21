@@ -13,6 +13,7 @@ use App\Models\CoachAvailability;
 use App\Models\Enrollment;
 use App\Models\EnrollmentGoal;
 use App\Models\EnrollmentNote;
+use App\Models\GoogleCredential;
 use App\Models\Invitation;
 use App\Models\LearningHourTarget;
 use App\Models\LearningSession;
@@ -43,6 +44,7 @@ use App\Policies\CoachAvailabilityPolicy;
 use App\Policies\EnrollmentGoalPolicy;
 use App\Policies\EnrollmentNotePolicy;
 use App\Policies\EnrollmentPolicy;
+use App\Policies\GoogleCredentialPolicy;
 use App\Policies\InvitationPolicy;
 use App\Policies\LearningHourTargetPolicy;
 use App\Policies\LearningSessionPolicy;
@@ -111,6 +113,7 @@ class AuthServiceProvider extends ServiceProvider
         MeetingPack::class => MeetingPackPolicy::class,
         Plan::class => PlanPolicy::class,
         CoachAvailability::class => CoachAvailabilityPolicy::class,
+        GoogleCredential::class => GoogleCredentialPolicy::class,
     ];
 
     /**
