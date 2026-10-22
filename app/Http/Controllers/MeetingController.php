@@ -21,6 +21,7 @@ use App\Models\Meeting;
 use App\Models\MeetingMemo;
 use App\Models\User;
 use App\Services\CoachMeetingLoadService;
+use App\Services\GoogleCalendarService;
 use App\Services\MeetingAvailabilityService;
 use App\Services\MeetingQuotaService;
 use App\Services\NotificationDeliveryService;
@@ -169,6 +170,7 @@ class MeetingController extends Controller
         MeetingQuotaService $quotaService,
         ConsumeQuotaAction $consumeAction,
         NotificationDeliveryService $notifications,
+        GoogleCalendarService $googleCalendar,
     ): RedirectResponse {
         $scheduledAt = Carbon::parse($request->validated('scheduled_at'));
         $topic = $request->validated('topic');
@@ -181,7 +183,7 @@ class MeetingController extends Controller
 
             $availabilityService->validateSlot($enrollment->certification, $scheduledAt);
 
-            $candidates = $this->findAvailableCoaches($enrollment->certification, $scheduledAt);
+            $candidates = $this->findAvailableCoaches($enrollment->certification, $scheduledAt, $availabilityService);
             if ($candidates->isEmpty()) {
                 throw new MeetingNoAvailableCoachException;
             }
@@ -210,6 +212,7 @@ class MeetingController extends Controller
         });
 
         $notifications->meetingReserved($meeting);
+        $googleCalendar->createMeetingEvent($meeting);
 
         return redirect()
             ->route('meetings.show', $meeting)
@@ -224,6 +227,7 @@ class MeetingController extends Controller
         Meeting $meeting,
         RefundQuotaAction $refundAction,
         NotificationDeliveryService $notifications,
+        GoogleCalendarService $googleCalendar,
     ): RedirectResponse {
         $this->authorize('cancel', $meeting);
 
@@ -249,6 +253,7 @@ class MeetingController extends Controller
         });
 
         $notifications->meetingCanceled($meeting->fresh(), $actor);
+        $googleCalendar->deleteMeetingEvent($meeting->fresh());
 
         return redirect()
             ->route('meetings.show', $meeting)
@@ -305,7 +310,7 @@ class MeetingController extends Controller
      *
      * @return Collection<int, User>
      */
-    private function findAvailableCoaches(Certification $certification, Carbon $scheduledAt): Collection
+    private function findAvailableCoaches(Certification $certification, Carbon $scheduledAt, MeetingAvailabilityService $availabilityService): Collection
     {
         $time = $scheduledAt->format('H:i:s');
 
@@ -320,6 +325,8 @@ class MeetingController extends Controller
                 $q->where('scheduled_at', $scheduledAt)
                     ->whereIn('status', [MeetingStatus::Reserved->value, MeetingStatus::Completed->value]);
             })
-            ->get();
+            ->get()
+            ->reject(fn (User $coach) => $availabilityService->isCoachBusyAt($coach, $scheduledAt))
+            ->values();
     }
 }
