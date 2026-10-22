@@ -42,6 +42,7 @@ final class GoogleCalendarService
     private const SCOPES = [
         'https://www.googleapis.com/auth/calendar.freebusy',
         'https://www.googleapis.com/auth/calendar.events',
+        'https://www.googleapis.com/auth/calendar.readonly',
     ];
 
     public function authorizationUrl(string $state): string
