@@ -6,7 +6,9 @@ namespace App\Http\Requests\GoogleCalendar;
 
 use App\Models\GoogleCredential;
 use Closure;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\Session;
 
 /**
@@ -59,5 +61,17 @@ class CallbackRequest extends FormRequest
                 $fail('Google連携の確認に失敗しました。もう一度お試しください。');
             }
         };
+    }
+
+    /**
+     * 検証に失敗したら（キャンセル・state 不一致など）、設定画面へ戻して失敗フラッシュを表示する。
+     */
+    protected function failedValidation(Validator $validator): void
+    {
+        $redirectPath = Session::pull(self::SESSION_REDIRECT_KEY, '/settings/availability');
+
+        throw new HttpResponseException(
+            redirect($redirectPath)->with('error', 'Googleカレンダーとの連携に失敗しました。'),
+        );
     }
 }

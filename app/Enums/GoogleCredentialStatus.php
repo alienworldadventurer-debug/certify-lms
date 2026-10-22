@@ -8,7 +8,7 @@ namespace App\Enums;
  * Google 連携情報 (GoogleCredential) の状態を表す Enum。
  *
  * - Active: 連携中。空き判定・面談予定の登録／削除を行う。
- * - Error: 連携エラー(許可取消・トークン失効)。Google 連携は行わない。
+ * - Error: 現在は使用しない(認証エラー時は連携情報を削除して未連携に戻す)。
  */
 enum GoogleCredentialStatus: string
 {

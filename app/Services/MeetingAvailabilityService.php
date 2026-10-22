@@ -100,7 +100,7 @@ final class MeetingAvailabilityService
     }
 
     /**
-     * 連携中コーチの Google busy 区間を取得する。未連携・エラー状態のコーチは対象外。
+     * 連携中コーチの Google busy 区間を取得する。未連携のコーチは対象外。
      *
      * @param Collection<int, User> $coaches
      *

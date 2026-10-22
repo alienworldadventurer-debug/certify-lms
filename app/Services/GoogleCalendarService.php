@@ -59,7 +59,13 @@ final class GoogleCalendarService
      */
     public function connect(User $coach, string $code): void
     {
-        $token = $this->makeClient()->fetchAccessTokenWithAuthCode($code);
+        $client = $this->makeClient();
+
+        try {
+            $token = $client->fetchAccessTokenWithAuthCode($code);
+        } catch (Throwable $e) {
+            throw new GoogleCalendarException('Google の認可コード交換に失敗しました。', false, $e);
+        }
 
         if (isset($token['error'])) {
             throw new GoogleCalendarException('Google の認可コード交換に失敗しました。');
@@ -69,13 +75,15 @@ final class GoogleCalendarService
             throw new GoogleCalendarException('Google からリフレッシュトークンが取得できませんでした。');
         }
 
+        $calendarId = $this->fetchPrimaryCalendarId($client, $token);
+
         GoogleCredential::updateOrCreate(
             ['user_id' => $coach->id],
             [
                 'access_token' => $token['access_token'],
                 'refresh_token' => $token['refresh_token'],
                 'expires_at' => now()->addSeconds((int) ($token['expires_in'] ?? 3600)),
-                'calendar_id' => self::CALENDAR_ID,
+                'calendar_id' => $calendarId,
                 'status' => GoogleCredentialStatus::Active,
                 'connected_at' => now(),
             ],
@@ -194,6 +202,27 @@ final class GoogleCalendarService
         $credential->delete();
     }
 
+    /**
+     * @param array<string, mixed> $token
+     *
+     * @throws GoogleCalendarException
+     */
+    private function fetchPrimaryCalendarId(Client $client, array $token): string
+    {
+        try {
+            $client->setAccessToken($token);
+            $calendarId = (new Calendar($client))->calendars->get(self::CALENDAR_ID)->getId();
+        } catch (Throwable $e) {
+            throw new GoogleCalendarException('Google のカレンダー情報の取得に失敗しました。', false, $e);
+        }
+
+        if (! is_string($calendarId) || $calendarId === '') {
+            throw new GoogleCalendarException('Google のカレンダー ID が取得できませんでした。');
+        }
+
+        return $calendarId;
+    }
+
     private function activeCredentialFor(string $coachId): ?GoogleCredential
     {
         return GoogleCredential::query()
@@ -250,7 +279,7 @@ final class GoogleCalendarService
     }
 
     /**
-     * 認証エラーなら連携状態を error に変更し、すべての失敗をログに残す。
+     * 認証エラーなら連携情報を削除して未連携に戻し、すべての失敗をログに残す。
      */
     private function handleFailure(GoogleCredential $credential, Throwable $e, string $message, array $context): void
     {
@@ -258,11 +287,11 @@ final class GoogleCalendarService
             ? $e->isAuthError()
             : ($e instanceof GoogleServiceException && $e->getCode() === 401);
 
-        if ($isAuthError) {
-            $credential->forceFill(['status' => GoogleCredentialStatus::Error])->save();
-        }
-
         Log::warning($message, $context + ['credential_id' => $credential->id, 'auth_error' => $isAuthError, 'message' => $e->getMessage()]);
+
+        if ($isAuthError) {
+            $credential->delete();
+        }
     }
 
     private function makeClient(): Client
