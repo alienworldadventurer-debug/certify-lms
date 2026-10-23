@@ -182,7 +182,7 @@ class MeetingController extends Controller
         $availabilityService->validateSlot($enrollment->certification, $scheduledAt);
 
         // Google Calendar への通信は外部 API のため DB トランザクションの外で行う。
-        // 同時刻の二重予約は UNIQUE(coach_id, scheduled_at) で最終的に防ぐ。
+        // 同時刻の二重予約は、トランザクション内の行ロックと再チェックで防ぐ。
         $candidates = $this->rejectBusyCoaches(
             $this->findAvailableCoaches($enrollment->certification, $scheduledAt),
             $scheduledAt,
