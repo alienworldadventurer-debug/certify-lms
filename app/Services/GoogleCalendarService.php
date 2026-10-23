@@ -18,6 +18,7 @@ use Google\Service\Calendar\FreeBusyRequest;
 use Google\Service\Calendar\FreeBusyRequestItem;
 use Google\Service\Exception as GoogleServiceException;
 use GuzzleHttp\Client as GuzzleClient;
+use GuzzleHttp\HandlerStack;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -44,6 +45,11 @@ final class GoogleCalendarService
         'https://www.googleapis.com/auth/calendar.events',
         'https://www.googleapis.com/auth/calendar.readonly',
     ];
+
+    /**
+     * HTTP ハンドラをテストから差し替えるための注入口。本番は null（Guzzle 既定）。
+     */
+    public function __construct(private readonly ?HandlerStack $handlerStack = null) {}
 
     public function authorizationUrl(string $state): string
     {
@@ -92,7 +98,7 @@ final class GoogleCalendarService
     }
 
     /**
-     * 指定期間の busy 区間を返す。失敗時は空配列（連携なし扱い）を返し、状態は変更しない。
+     * 指定期間の busy 区間を返す。失敗時は空配列を返す。認証エラーのときだけ連携情報を削除する。
      *
      * @return array<int, array{start: Carbon, end: Carbon}>
      */
@@ -119,7 +125,7 @@ final class GoogleCalendarService
 
             return $ranges;
         } catch (Throwable $e) {
-            Log::warning('Google busy 取得に失敗しました', ['credential_id' => $credential->id, 'message' => $e->getMessage()]);
+            $this->handleFailure($credential, $e, 'Google busy 取得に失敗しました', []);
 
             return [];
         }
@@ -307,6 +313,7 @@ final class GoogleCalendarService
         $client->setHttpClient(new GuzzleClient([
             'timeout' => self::TIMEOUT_SECONDS,
             'connect_timeout' => self::TIMEOUT_SECONDS,
+            'handler' => $this->handlerStack,
         ]));
 
         return $client;

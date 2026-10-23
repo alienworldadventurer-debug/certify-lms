@@ -55,6 +55,7 @@ class GoogleCalendarConnectionTest extends TestCase
         $this->actingAs($coach)
             ->withSession(['google_calendar_oauth_state' => 'expected-state'])
             ->get(route('settings.google-calendar.callback', ['error' => 'access_denied']))
+            ->assertRedirect('/settings/availability')
             ->assertSessionHas('error', self::FLASH_FAILED);
 
         $this->assertDatabaseMissing('google_credentials', ['user_id' => $coach->id]);
@@ -67,6 +68,7 @@ class GoogleCalendarConnectionTest extends TestCase
         $this->actingAs($coach)
             ->withSession(['google_calendar_oauth_state' => 'expected-state'])
             ->get(route('settings.google-calendar.callback', ['code' => 'dummy-code', 'state' => 'wrong-state']))
+            ->assertRedirect('/settings/availability')
             ->assertSessionHas('error', self::FLASH_FAILED);
 
         $this->assertDatabaseMissing('google_credentials', ['user_id' => $coach->id]);
@@ -83,5 +85,87 @@ class GoogleCalendarConnectionTest extends TestCase
             ->assertSessionHas('success', self::FLASH_DISCONNECTED);
 
         $this->assertDatabaseMissing('google_credentials', ['user_id' => $coach->id]);
+    }
+
+    public function test_guest_is_redirected_to_login_from_all_google_routes(): void
+    {
+        $this->get(route('settings.google-calendar.redirect'))->assertRedirect(route('login'));
+        $this->get(route('settings.google-calendar.callback'))->assertRedirect(route('login'));
+        $this->delete(route('settings.google-calendar.destroy'))->assertRedirect(route('login'));
+    }
+
+    public function test_student_and_admin_cannot_call_callback(): void
+    {
+        foreach ([User::factory()->student()->create(), User::factory()->admin()->create()] as $user) {
+            $this->actingAs($user)
+                ->withSession(['google_calendar_oauth_state' => 'expected-state'])
+                ->get(route('settings.google-calendar.callback', ['code' => 'dummy-code', 'state' => 'expected-state']))
+                ->assertForbidden();
+        }
+
+        $this->assertDatabaseCount('google_credentials', 0);
+    }
+
+    public function test_disconnect_without_credential_still_flashes_success(): void
+    {
+        $coach = User::factory()->coach()->create();
+
+        $this->actingAs($coach)
+            ->delete(route('settings.google-calendar.destroy'))
+            ->assertRedirect(route('settings.availability.index'))
+            ->assertSessionHas('success', self::FLASH_DISCONNECTED);
+    }
+
+    public function test_callback_without_code_flashes_failure_and_returns_to_availability(): void
+    {
+        $coach = User::factory()->coach()->create();
+
+        $this->actingAs($coach)
+            ->withSession(['google_calendar_oauth_state' => 'expected-state'])
+            ->get(route('settings.google-calendar.callback', ['state' => 'expected-state']))
+            ->assertRedirect('/settings/availability')
+            ->assertSessionHas('error', self::FLASH_FAILED);
+
+        $this->assertDatabaseMissing('google_credentials', ['user_id' => $coach->id]);
+    }
+
+    public function test_callback_error_redirects_to_availability_and_clears_state(): void
+    {
+        $coach = User::factory()->coach()->create();
+
+        $this->actingAs($coach)
+            ->withSession(['google_calendar_oauth_state' => 'expected-state'])
+            ->get(route('settings.google-calendar.callback', ['error' => 'access_denied']))
+            ->assertRedirect('/settings/availability')
+            ->assertSessionHas('error', self::FLASH_FAILED)
+            ->assertSessionMissing('google_calendar_oauth_state');
+    }
+
+    public function test_reused_state_is_rejected_on_second_callback(): void
+    {
+        $coach = User::factory()->coach()->create();
+
+        $this->actingAs($coach)
+            ->withSession(['google_calendar_oauth_state' => 'expected-state'])
+            ->get(route('settings.google-calendar.callback', ['error' => 'access_denied']))
+            ->assertSessionHas('error', self::FLASH_FAILED);
+
+        $this->actingAs($coach)
+            ->get(route('settings.google-calendar.callback', ['code' => 'dummy-code', 'state' => 'expected-state']))
+            ->assertRedirect('/settings/availability')
+            ->assertSessionHas('error', self::FLASH_FAILED);
+
+        $this->assertDatabaseMissing('google_credentials', ['user_id' => $coach->id]);
+    }
+
+    public function test_external_redirect_path_is_ignored(): void
+    {
+        $coach = User::factory()->coach()->create();
+
+        foreach (['https://evil.example', '//evil.example', '\\\\evil.example'] as $path) {
+            $this->actingAs($coach)
+                ->get(route('settings.google-calendar.redirect', ['redirect_path' => $path]))
+                ->assertSessionHas('google_calendar_oauth_redirect_path', '/settings/availability');
+        }
     }
 }
