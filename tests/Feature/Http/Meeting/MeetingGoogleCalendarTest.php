@@ -11,6 +11,7 @@ use App\Models\Enrollment;
 use App\Models\GoogleCredential;
 use App\Models\Meeting;
 use App\Models\User;
+use App\Services\GoogleCalendarService;
 use Carbon\Carbon;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Promise\Create;
@@ -45,7 +46,7 @@ class MeetingGoogleCalendarTest extends TestCase
 
             return Create::rejectionFor(new \RuntimeException('Unexpected Google request: '.$request->getUri()));
         };
-        $this->app->instance(HandlerStack::class, new HandlerStack($handler));
+        $this->app->instance(GoogleCalendarService::class, new GoogleCalendarService(new HandlerStack($handler)));
     }
 
     private function jsonResponse(int $status, array $body): Response

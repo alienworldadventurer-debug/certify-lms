@@ -18,7 +18,6 @@ use Google\Service\Calendar\FreeBusyRequest;
 use Google\Service\Calendar\FreeBusyRequestItem;
 use Google\Service\Exception as GoogleServiceException;
 use GuzzleHttp\Client as GuzzleClient;
-use GuzzleHttp\HandlerStack;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -49,7 +48,8 @@ final class GoogleCalendarService
     /**
      * HTTP ハンドラをテストから差し替えるための注入口。本番は null（Guzzle 既定）。
      */
-    public function __construct(private readonly ?HandlerStack $handlerStack = null) {}
+    // 型を HandlerStack にすると、コンテナが空の HandlerStack を自動生成してしまうため object にしている
+    public function __construct(private readonly ?object $httpHandler = null) {}
 
     public function authorizationUrl(string $state): string
     {
@@ -313,7 +313,7 @@ final class GoogleCalendarService
         $client->setHttpClient(new GuzzleClient([
             'timeout' => self::TIMEOUT_SECONDS,
             'connect_timeout' => self::TIMEOUT_SECONDS,
-            'handler' => $this->handlerStack,
+            'handler' => $this->httpHandler,
         ]));
 
         return $client;
