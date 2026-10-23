@@ -28,7 +28,6 @@ use App\Services\NotificationDeliveryService;
 use App\UseCases\MeetingQuota\ConsumeQuotaAction;
 use App\UseCases\MeetingQuota\RefundQuotaAction;
 use Carbon\Carbon;
-use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
@@ -176,34 +175,55 @@ class MeetingController extends Controller
         $topic = $request->validated('topic');
         $student = $enrollment->user;
 
-        $meeting = DB::transaction(function () use ($enrollment, $student, $scheduledAt, $topic, $availabilityService, $coachLoadService, $quotaService, $consumeAction) {
+        if ($quotaService->remaining($student) < 1) {
+            throw new InsufficientMeetingQuotaException;
+        }
+
+        $availabilityService->validateSlot($enrollment->certification, $scheduledAt);
+
+        // Google Calendar への通信は外部 API のため DB トランザクションの外で行う。
+        // 同時刻の二重予約は UNIQUE(coach_id, scheduled_at) で最終的に防ぐ。
+        $candidates = $this->rejectBusyCoaches(
+            $this->findAvailableCoaches($enrollment->certification, $scheduledAt),
+            $scheduledAt,
+            $availabilityService,
+        );
+        if ($candidates->isEmpty()) {
+            throw new MeetingNoAvailableCoachException;
+        }
+
+        $meeting = DB::transaction(function () use ($enrollment, $student, $scheduledAt, $topic, $candidates, $quotaService, $coachLoadService, $consumeAction) {
             if ($quotaService->remaining($student) < 1) {
                 throw new InsufficientMeetingQuotaException;
             }
 
-            $availabilityService->validateSlot($enrollment->certification, $scheduledAt);
-
-            $candidates = $this->findAvailableCoaches($enrollment->certification, $scheduledAt, $availabilityService);
-            if ($candidates->isEmpty()) {
+            // 同時予約を直列化するため候補コーチ行を ID 順にロックし、その後に同時刻の予約を再確認する。
+            $lockedCandidates = User::query()
+                ->whereIn('id', $candidates->pluck('id'))
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+            $bookedCoachIds = Meeting::query()
+                ->where('status', MeetingStatus::Reserved->value)
+                ->where('scheduled_at', $scheduledAt)
+                ->whereIn('coach_id', $lockedCandidates->pluck('id'))
+                ->pluck('coach_id');
+            $available = $lockedCandidates->reject(fn (User $c) => $bookedCoachIds->contains($c->id))->values();
+            if ($available->isEmpty()) {
                 throw new MeetingNoAvailableCoachException;
             }
 
-            $coach = $coachLoadService->leastLoadedCoach($candidates);
+            $coach = $coachLoadService->leastLoadedCoach($available);
 
-            try {
-                $meeting = Meeting::create([
-                    'enrollment_id' => $enrollment->id,
-                    'coach_id' => $coach->id,
-                    'student_id' => $student->id,
-                    'scheduled_at' => $scheduledAt,
-                    'status' => MeetingStatus::Reserved->value,
-                    'topic' => $topic,
-                    'meeting_url_snapshot' => $coach->meeting_url,
-                ]);
-            } catch (UniqueConstraintViolationException $e) {
-                // 同時刻に他受講生が先行予約した race condition: UNIQUE(coach_id, scheduled_at) で弾かれた
-                throw new MeetingNoAvailableCoachException($e);
-            }
+            $meeting = Meeting::create([
+                'enrollment_id' => $enrollment->id,
+                'coach_id' => $coach->id,
+                'student_id' => $student->id,
+                'scheduled_at' => $scheduledAt,
+                'status' => MeetingStatus::Reserved->value,
+                'topic' => $topic,
+                'meeting_url_snapshot' => $coach->meeting_url,
+            ]);
 
             $transaction = ($consumeAction)($student, $meeting->id);
             $meeting->update(['meeting_quota_transaction_id' => $transaction->id]);
@@ -306,15 +326,16 @@ class MeetingController extends Controller
 
     /**
      * 担当コーチ集合のうち、(1) 当該時刻に有効な availability 枠があり、
-     * (2) 当該時刻に reserved / completed の Meeting を持たないコーチ集合を返す。
+     * (2) 当該時刻に reserved / completed の Meeting を持たないコーチ集合を返す（DB のみ）。
      *
      * @return Collection<int, User>
      */
-    private function findAvailableCoaches(Certification $certification, Carbon $scheduledAt, MeetingAvailabilityService $availabilityService): Collection
+    private function findAvailableCoaches(Certification $certification, Carbon $scheduledAt): Collection
     {
         $time = $scheduledAt->format('H:i:s');
 
         return $certification->coaches()
+            ->with('googleCredential')
             ->whereHas('coachAvailabilities', function ($q) use ($scheduledAt, $time) {
                 $q->where('day_of_week', $scheduledAt->dayOfWeek)
                     ->where('is_active', true)
@@ -326,6 +347,19 @@ class MeetingController extends Controller
                     ->whereIn('status', [MeetingStatus::Reserved->value, MeetingStatus::Completed->value]);
             })
             ->get()
+            ->values();
+    }
+
+    /**
+     * Google カレンダー上で busy なコーチを候補から除外する（外部 API 呼び出しを含む）。
+     *
+     * @param Collection<int, User> $coaches
+     *
+     * @return Collection<int, User>
+     */
+    private function rejectBusyCoaches(Collection $coaches, Carbon $scheduledAt, MeetingAvailabilityService $availabilityService): Collection
+    {
+        return $coaches
             ->reject(fn (User $coach) => $availabilityService->isCoachBusyAt($coach, $scheduledAt))
             ->values();
     }

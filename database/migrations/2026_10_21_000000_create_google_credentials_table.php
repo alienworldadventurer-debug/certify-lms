@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
  * コーチの Google アカウント連携情報テーブル(1 ユーザー : 1 件)。
  *
  * トークンは暗号化せず保存する(スコープ外)。本番運用では暗号化を推奨する。
- * status は `active`(連携中) / `error`(連携エラー) を保持する。
+ * status は `active`(連携中) のみ使用する。認証エラー時は行を削除して未連携に戻す。
  */
 return new class extends Migration
 {

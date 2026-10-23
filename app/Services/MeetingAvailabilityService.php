@@ -127,7 +127,7 @@ final class MeetingAvailabilityService
      */
     public function isCoachBusyAt(User $coach, Carbon $slot): bool
     {
-        $credential = $coach->googleCredential()->first();
+        $credential = $coach->googleCredential;
         if ($credential === null || $credential->status !== GoogleCredentialStatus::Active) {
             return false;
         }
