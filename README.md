@@ -140,6 +140,7 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 
 `.env.example` をコピーするだけで、すべての機能がローカルで動作します（メールは Mailpit に配信されます）。
 
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` — コーチの Google カレンダー連携に使用します。Google Cloud Console で OAuth クライアント（ウェブアプリケーション）を作成し、承認済みのリダイレクト URI に `GOOGLE_REDIRECT_URI` の値を登録してください。未設定の場合、連携操作は失敗します（面談予約自体は影響を受けません）。なお、連携で保存するアクセストークン・リフレッシュトークンは現状暗号化していません。本番運用ではトークンの暗号化を推奨します
 - `PUSHER_*` — チャットのリアルタイム配信に使用します。有効にする場合は Pusher のキーを取得して設定し、`BROADCAST_DRIVER=pusher` に変更してください。未設定（既定の `BROADCAST_DRIVER=log`）でもメッセージの送受信自体は動作し、相手画面へのリアルタイム反映のみ行われません
 
 新しい環境変数やセットアップ手順を追加した場合は、`.env.example` と本 README に追記し、チームの誰でも環境を再現できる状態を保ってください。

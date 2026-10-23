@@ -13,8 +13,8 @@ use Illuminate\Support\Facades\Schema;
  * `status=reserved` で即時確定する(コーチによる承認フローはない)。
  * scheduled_at は開始時刻のみ保持し、終了時刻は常に `scheduled_at + 60 分` とする運用(NFR で 60 分固定)。
  *
- * (coach_id, scheduled_at) UNIQUE で同コーチ × 同時刻の二重予約を DB レベルで禁止し、
- * Action 内の race condition は INSERT 失敗を `MeetingNoAvailableCoachException` に変換することで吸収する。
+ * 同コーチ × 同時刻の二重予約は DB 制約では防がず、予約時にコーチ行をロックして再確認することで防ぐ
+ * (キャンセル済みの枠は再予約可能にするため UNIQUE は付与しない)。
  */
 return new class extends Migration
 {

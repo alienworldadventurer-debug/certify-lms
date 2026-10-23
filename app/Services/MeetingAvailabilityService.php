@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Enums\GoogleCredentialStatus;
 use App\Enums\MeetingStatus;
 use App\Exceptions\Mentoring\MeetingOutOfAvailabilityException;
 use App\Models\Certification;
 use App\Models\CoachAvailability;
 use App\Models\Meeting;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -21,6 +23,10 @@ use Illuminate\Support\Collection;
  */
 final class MeetingAvailabilityService
 {
+    public function __construct(
+        private readonly GoogleCalendarService $googleCalendar,
+    ) {}
+
     /**
      * 指定 Certification の担当コーチ集合について、指定日 1 日分の 60 分単位空きスロットを返す。
      *
@@ -34,12 +40,13 @@ final class MeetingAvailabilityService
         $dayEnd = $date->copy()->endOfDay();
         $dayOfWeek = $date->dayOfWeek;
 
-        $coaches = $certification->coaches()->get();
+        $coaches = $certification->coaches()->with('googleCredential')->get();
         if ($coaches->isEmpty()) {
             return collect();
         }
 
         $coachIds = $coaches->pluck('id')->all();
+        $busyByCoach = $this->busyRangesByCoach($coaches, $dayStart, $dayEnd);
 
         $availabilities = CoachAvailability::query()
             ->whereIn('coach_id', $coachIds)
@@ -69,8 +76,9 @@ final class MeetingAvailabilityService
                 $slotKey = $slot->format('H:i');
                 $coachId = $availability->coach_id;
                 $booked = $bookedByCoach[$coachId] ?? [];
+                $busy = $this->isBusy($busyByCoach[$coachId] ?? [], $slot);
 
-                if (! in_array($slotKey, $booked, true)) {
+                if (! in_array($slotKey, $booked, true) && ! $busy) {
                     $slotCounts[$slotKey] = ($slotCounts[$slotKey] ?? 0) + 1;
                 }
 
@@ -89,6 +97,62 @@ final class MeetingAvailabilityService
                 'available_coach_count' => $count,
             ];
         })->values();
+    }
+
+    /**
+     * 連携中コーチの Google busy 区間を取得する。未連携のコーチは対象外。
+     *
+     * @param Collection<int, User> $coaches
+     *
+     * @return array<string, array<int, array{start: Carbon, end: Carbon}>>
+     */
+    private function busyRangesByCoach(Collection $coaches, Carbon $dayStart, Carbon $dayEnd): array
+    {
+        $busyByCoach = [];
+
+        foreach ($coaches as $coach) {
+            $credential = $coach->googleCredential;
+            if ($credential === null || $credential->status !== GoogleCredentialStatus::Active) {
+                continue;
+            }
+
+            $busyByCoach[$coach->id] = $this->googleCalendar->busyRanges($credential, $dayStart, $dayEnd);
+        }
+
+        return $busyByCoach;
+    }
+
+    /**
+     * 指定コーチが枠 [slot, slot+1h) に Google busy 区間を持つかを返す（連携中のみ判定）。
+     */
+    public function isCoachBusyAt(User $coach, Carbon $slot): bool
+    {
+        $credential = $coach->googleCredential;
+        if ($credential === null || $credential->status !== GoogleCredentialStatus::Active) {
+            return false;
+        }
+
+        $ranges = $this->googleCalendar->busyRanges($credential, $slot->copy(), $slot->copy()->addHour());
+
+        return $this->isBusy($ranges, $slot);
+    }
+
+    /**
+     * 1 時間枠 [slot, slot+1h) が busy 区間と重なるかを判定する。
+     *
+     * @param array<int, array{start: Carbon, end: Carbon}> $ranges
+     */
+    private function isBusy(array $ranges, Carbon $slot): bool
+    {
+        $slotEnd = $slot->copy()->addHour();
+
+        foreach ($ranges as $range) {
+            if ($range['start']->lt($slotEnd) && $range['end']->gt($slot)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
