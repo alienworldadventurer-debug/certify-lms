@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             UserSeeder::class,
+            GoogleCredentialSeeder::class,
             PlanSeeder::class,
             UserLifecycleSeeder::class,
             MeetingPackSeeder::class,
