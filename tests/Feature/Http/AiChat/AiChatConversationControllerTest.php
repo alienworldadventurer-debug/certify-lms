@@ -522,7 +522,7 @@ class AiChatConversationControllerTest extends TestCase
         $this->actingAs($student)
             ->patchJson(route('ai-chat.conversations.update', $conversation), ['title' => str_repeat('あ', 101)])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['title']);
+            ->assertJsonValidationErrors(['title' => 'タイトルは100文字以内で入力してください。']);
     }
 
     public function test_store_message_saves_model_and_token_usage_on_assistant_message(): void
@@ -592,6 +592,21 @@ class AiChatConversationControllerTest extends TestCase
             ->json('conversation.id');
 
         $this->assertSame('合格ラインは何点ですか', AiChatConversation::query()->findOrFail($conversation)->title);
+    }
+
+    public function test_store_json_accepts_section_of_passed_certification(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $section = $this->publishedSection();
+        Enrollment::factory()->passed()->create([
+            'user_id' => $student->id,
+            'certification_id' => $section->chapter->part->certification_id,
+        ]);
+
+        $this->actingAs($student)
+            ->postJson('/ai-chat/conversations', ['section_id' => $section->id, 'message' => '質問'])
+            ->assertCreated()
+            ->assertJsonPath('conversation.section_id', $section->id);
     }
 
     public function test_store_json_rejects_section_of_certification_not_being_learned(): void

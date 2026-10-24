@@ -61,7 +61,7 @@ class StoreConversationRequest extends FormRequest
     {
         $certificationIds = Enrollment::query()
             ->where('user_id', $this->user()?->id)
-            ->where('status', EnrollmentStatus::Learning->value)
+            ->whereIn('status', [EnrollmentStatus::Learning->value, EnrollmentStatus::Passed->value])
             ->pluck('certification_id');
 
         return Section::query()
