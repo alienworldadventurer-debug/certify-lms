@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Exceptions\AiChat;
 
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\BadGatewayHttpException;
 
 /**
@@ -20,5 +22,20 @@ final class AiChatLlmFailedException extends BadGatewayHttpException
         ?\Throwable $previous = null,
     ) {
         parent::__construct('AI が応答できませんでした。しばらく時間をおいて再試行してください。', $previous);
+    }
+
+    /**
+     * JSON リクエストには画面 JS が参照する upstream_status を含める。
+     */
+    public function render(Request $request): ?JsonResponse
+    {
+        if (! $request->expectsJson()) {
+            return null;
+        }
+
+        return response()->json([
+            'message' => $this->getMessage(),
+            'upstream_status' => $this->upstreamStatus,
+        ], 502);
     }
 }

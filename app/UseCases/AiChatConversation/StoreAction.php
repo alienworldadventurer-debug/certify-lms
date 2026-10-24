@@ -6,6 +6,7 @@ namespace App\UseCases\AiChatConversation;
 
 use App\Enums\EnrollmentStatus;
 use App\Exceptions\AiChat\AiChatDailyLimitExceededException;
+use App\Exceptions\AiChat\AiChatLlmFailedException;
 use App\Exceptions\AiChat\AiChatUnavailableException;
 use App\Models\AiChatConversation;
 use App\Models\Enrollment;
@@ -26,7 +27,7 @@ final class StoreAction
     ) {}
 
     /**
-     * @return array{conversation: AiChatConversation, created: bool}
+     * @return array{conversation: AiChatConversation, created: bool, error: AiChatLlmFailedException|null}
      *
      * @throws AiChatUnavailableException
      * @throws AiChatDailyLimitExceededException
@@ -56,9 +57,13 @@ final class StoreAction
             $created = true;
         }
 
+        $error = null;
+
         if ($message !== null) {
             try {
                 $this->storeMessage->__invoke($conversation, $message);
+            } catch (AiChatLlmFailedException $e) {
+                $error = $e;
             } catch (AiChatUnavailableException|AiChatDailyLimitExceededException $e) {
                 if ($created) {
                     $conversation->delete();
@@ -71,6 +76,7 @@ final class StoreAction
         return [
             'conversation' => $conversation->refresh(),
             'created' => $created,
+            'error' => $error,
         ];
     }
 

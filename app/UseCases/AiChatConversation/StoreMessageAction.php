@@ -32,11 +32,13 @@ final class StoreMessageAction
     ) {}
 
     /**
+     * @return array{user_message: AiChatMessage, assistant_message: AiChatMessage}
+     *
      * @throws AiChatUnavailableException
      * @throws AiChatDailyLimitExceededException
      * @throws AiChatLlmFailedException
      */
-    public function __invoke(AiChatConversation $conversation, string $content): AiChatMessage
+    public function __invoke(AiChatConversation $conversation, string $content): array
     {
         if (! $this->gemini->isConfigured()) {
             throw new AiChatUnavailableException;
@@ -51,7 +53,7 @@ final class StoreMessageAction
 
         $history = $this->history($conversation);
 
-        $this->saveMessage($conversation, AiChatMessageRole::User, AiChatMessageStatus::Completed, $content);
+        $userMessage = $this->saveMessage($conversation, AiChatMessageRole::User, AiChatMessageStatus::Completed, $content);
 
         $history[] = ['role' => 'user', 'text' => $content];
 
@@ -96,7 +98,7 @@ final class StoreMessageAction
             $this->retitle($conversation, $content, $result['text']);
         }
 
-        return $reply;
+        return ['user_message' => $userMessage, 'assistant_message' => $reply];
     }
 
     /**
