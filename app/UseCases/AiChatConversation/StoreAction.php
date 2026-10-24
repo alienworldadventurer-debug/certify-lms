@@ -12,13 +12,15 @@ use App\Models\AiChatConversation;
 use App\Models\Enrollment;
 use App\Models\Section;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 /**
  * 新しい相談を開始するユースケース。
  *
  * - `section_id` があり同一 Section の会話が既にあれば、新規作成せずその会話を返す（created = false）。
  * - なければ会話を作成する。本文があれば最初の質問として送信する。
- * - 最初の質問が送信できなかった（API キー未設定・上限超過）場合は、作成した会話を削除して例外を投げる。
+ * - 会話の作成と最初の質問はトランザクションで囲む。送信できなかった（API キー未設定・上限超過）場合は
+ *   作成した会話もロールバックして例外を投げる。
  */
 final class StoreAction
 {
@@ -36,48 +38,44 @@ final class StoreAction
     {
         $section = $sectionId !== null ? Section::query()->find($sectionId) : null;
 
-        $existing = $section !== null
-            ? AiChatConversation::query()
-                ->where('user_id', $user->id)
-                ->where('section_id', $section->id)
-                ->latest('last_message_at')
-                ->first()
-            : null;
+        return DB::transaction(function () use ($user, $message, $section): array {
+            $existing = $section !== null
+                ? AiChatConversation::query()
+                    ->where('user_id', $user->id)
+                    ->where('section_id', $section->id)
+                    ->latest('last_message_at')
+                    ->first()
+                : null;
 
-        if ($existing !== null) {
-            $conversation = $existing;
-            $created = false;
-        } else {
-            $conversation = AiChatConversation::query()->create([
-                'user_id' => $user->id,
-                'enrollment_id' => $this->resolveEnrollment($user, $section)?->id,
-                'section_id' => $section?->id,
-                'title' => $this->provisionalTitle($message),
-            ]);
-            $created = true;
-        }
-
-        $error = null;
-
-        if ($message !== null) {
-            try {
-                $this->storeMessage->__invoke($conversation, $message);
-            } catch (AiChatLlmFailedException $e) {
-                $error = $e;
-            } catch (AiChatUnavailableException|AiChatDailyLimitExceededException $e) {
-                if ($created) {
-                    $conversation->delete();
-                }
-
-                throw $e;
+            if ($existing !== null) {
+                $conversation = $existing;
+                $created = false;
+            } else {
+                $conversation = AiChatConversation::query()->create([
+                    'user_id' => $user->id,
+                    'enrollment_id' => $this->resolveEnrollment($user, $section)?->id,
+                    'section_id' => $section?->id,
+                    'title' => $this->provisionalTitle($message),
+                ]);
+                $created = true;
             }
-        }
 
-        return [
-            'conversation' => $conversation->refresh(),
-            'created' => $created,
-            'error' => $error,
-        ];
+            $error = null;
+
+            if ($message !== null) {
+                try {
+                    $this->storeMessage->__invoke($conversation, $message);
+                } catch (AiChatLlmFailedException $e) {
+                    $error = $e;
+                }
+            }
+
+            return [
+                'conversation' => $conversation->refresh(),
+                'created' => $created,
+                'error' => $error,
+            ];
+        });
     }
 
     private function resolveEnrollment(User $user, ?Section $section): ?Enrollment

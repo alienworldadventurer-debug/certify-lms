@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Http\AiChat;
 
+use App\Enums\AiChatMessageRole;
 use App\Enums\AiChatMessageStatus;
+use App\Enums\ContentStatus;
 use App\Models\AiChatConversation;
 use App\Models\AiChatDailyUsage;
 use App\Models\AiChatMessage;
+use App\Models\Chapter;
 use App\Models\Enrollment;
+use App\Models\Part;
 use App\Models\Section;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -125,7 +129,7 @@ class AiChatConversationControllerTest extends TestCase
     public function test_store_json_with_section_links_enrollment_and_reuses_existing_conversation(): void
     {
         $student = User::factory()->student()->inProgress()->create();
-        $section = Section::factory()->published()->create();
+        $section = $this->publishedSection();
         $enrollment = Enrollment::factory()->learning()->create([
             'user_id' => $student->id,
             'certification_id' => $section->chapter->part->certification_id,
@@ -423,7 +427,7 @@ class AiChatConversationControllerTest extends TestCase
     public function test_store_json_includes_section_title_in_gemini_system_instruction(): void
     {
         $student = User::factory()->student()->inProgress()->create();
-        $section = Section::factory()->published()->create(['title' => 'テスト用教材タイトル']);
+        $section = $this->publishedSection(['title' => 'テスト用教材タイトル']);
         Enrollment::factory()->learning()->create([
             'user_id' => $student->id,
             'certification_id' => $section->chapter->part->certification_id,
@@ -446,7 +450,7 @@ class AiChatConversationControllerTest extends TestCase
         $conversation = AiChatConversation::factory()->create(['user_id' => $owner->id]);
 
         $this->actingAs($other)
-            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['message' => '割り込み'])
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['content' => '割り込み'])
             ->assertForbidden();
 
         Http::assertNothingSent();
@@ -460,7 +464,7 @@ class AiChatConversationControllerTest extends TestCase
         $admin = User::factory()->admin()->create();
 
         $this->actingAs($admin)
-            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['message' => '質問'])
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['content' => '質問'])
             ->assertForbidden();
 
         Http::assertNothingSent();
@@ -519,6 +523,116 @@ class AiChatConversationControllerTest extends TestCase
             ->patchJson(route('ai-chat.conversations.update', $conversation), ['title' => str_repeat('あ', 101)])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['title']);
+    }
+
+    public function test_store_message_saves_model_and_token_usage_on_assistant_message(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $student->id]);
+
+        $this->actingAs($student)
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['content' => '質問'])
+            ->assertOk();
+
+        $assistant = AiChatMessage::query()->where('role', AiChatMessageRole::Assistant->value)->sole();
+        $this->assertSame(config('ai-chat.gemini.model'), $assistant->model);
+        $this->assertSame(10, $assistant->input_tokens);
+        $this->assertSame(5, $assistant->output_tokens);
+        $this->assertNotNull($assistant->response_time_ms);
+        $this->assertSame(AiChatMessageStatus::Completed, $assistant->status);
+    }
+
+    public function test_store_message_sends_only_latest_history_limit_messages_plus_new_question(): void
+    {
+        config(['ai-chat.history_limit' => 2]);
+        $student = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $student->id]);
+        foreach (['古い質問', '古い回答', '直近の質問', '直近の回答'] as $i => $text) {
+            AiChatMessage::query()->create([
+                'conversation_id' => $conversation->id,
+                'role' => $i % 2 === 0 ? AiChatMessageRole::User->value : AiChatMessageRole::Assistant->value,
+                'status' => AiChatMessageStatus::Completed->value,
+                'content' => $text,
+                'created_at' => now()->addSeconds($i),
+            ]);
+        }
+
+        $this->actingAs($student)
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['content' => '今回の質問'])
+            ->assertOk();
+
+        Http::assertSent(function ($request) {
+            $texts = array_map(fn (array $c) => $c['parts'][0]['text'], $request->data()['contents']);
+
+            return $texts === ['直近の質問', '直近の回答', '今回の質問'];
+        });
+    }
+
+    public function test_first_exchange_retitles_conversation_when_auto_title_is_enabled(): void
+    {
+        config(['ai-chat.auto_title' => true]);
+        $this->geminiResponse = Http::response($this->geminiBody('合格ラインの確認'));
+        $student = User::factory()->student()->inProgress()->create();
+
+        $conversation = $this->actingAs($student)
+            ->postJson('/ai-chat/conversations', ['message' => '合格ラインは何点ですか'])
+            ->assertCreated()
+            ->json('conversation.id');
+
+        $this->assertSame('合格ラインの確認', AiChatConversation::query()->findOrFail($conversation)->title);
+    }
+
+    public function test_title_is_kept_when_auto_title_is_disabled(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+
+        $conversation = $this->actingAs($student)
+            ->postJson('/ai-chat/conversations', ['message' => '合格ラインは何点ですか'])
+            ->assertCreated()
+            ->json('conversation.id');
+
+        $this->assertSame('合格ラインは何点ですか', AiChatConversation::query()->findOrFail($conversation)->title);
+    }
+
+    public function test_store_json_rejects_section_of_certification_not_being_learned(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $section = $this->publishedSection();
+
+        $this->actingAs($student)
+            ->postJson('/ai-chat/conversations', ['section_id' => $section->id, 'message' => '質問'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['section_id']);
+
+        $this->assertSame(0, AiChatConversation::query()->count());
+    }
+
+    public function test_store_json_rejects_unpublished_section_of_learning_certification(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $section = $this->publishedSection(['status' => ContentStatus::Draft->value]);
+        Enrollment::factory()->learning()->create([
+            'user_id' => $student->id,
+            'certification_id' => $section->chapter->part->certification_id,
+        ]);
+
+        $this->actingAs($student)
+            ->postJson('/ai-chat/conversations', ['section_id' => $section->id, 'message' => '質問'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['section_id']);
+
+        $this->assertSame(0, AiChatConversation::query()->count());
+    }
+
+    /**
+     * 親（Chapter・Part）も公開済みの Section を作る。Section::scopePublished は親の公開状態も見るため。
+     */
+    private function publishedSection(array $attributes = []): Section
+    {
+        $part = Part::factory()->published();
+        $chapter = Chapter::factory()->published()->for($part);
+
+        return Section::factory()->published()->for($chapter)->create($attributes);
     }
 
     /**
