@@ -58,7 +58,7 @@ final class StoreMessageAction
         $history[] = ['role' => 'user', 'text' => $content];
 
         try {
-            $result = $this->gemini->generate((string) config('ai-chat.system_prompt'), $history);
+            $result = $this->gemini->generate($this->systemPrompt($conversation), $history);
         } catch (AiChatLlmFailedException $e) {
             $this->saveMessage(
                 $conversation,
@@ -99,6 +99,26 @@ final class StoreMessageAction
         }
 
         return ['user_message' => $userMessage, 'assistant_message' => $reply];
+    }
+
+    /**
+     * 基本のシステムプロンプトに、会話の文脈（閲覧中の教材 or 受講中の資格）を追記する。
+     */
+    private function systemPrompt(AiChatConversation $conversation): string
+    {
+        $conversation->loadMissing(['section', 'enrollment.certification']);
+
+        $prompt = (string) config('ai-chat.system_prompt');
+
+        if ($conversation->section !== null) {
+            return $prompt."\n\n受講生が閲覧中の教材: {$conversation->section->title}";
+        }
+
+        $certificationName = $conversation->enrollment?->certification?->name;
+
+        return $certificationName !== null
+            ? $prompt."\n\n受講生が受講中の資格: {$certificationName}"
+            : $prompt;
     }
 
     /**

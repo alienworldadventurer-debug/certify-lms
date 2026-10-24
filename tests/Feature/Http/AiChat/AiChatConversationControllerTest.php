@@ -399,6 +399,128 @@ class AiChatConversationControllerTest extends TestCase
         $this->assertNotNull(AiChatConversation::query()->find($conversation->id));
     }
 
+    public function test_store_json_accepts_message_of_exactly_2000_characters(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($student)
+            ->postJson('/ai-chat/conversations', ['message' => str_repeat('あ', 2000)])
+            ->assertCreated();
+
+        $this->assertSame(2000, mb_strlen(AiChatMessage::query()->where('role', 'user')->value('content')));
+    }
+
+    public function test_store_json_rejects_message_of_2001_characters_with_exact_message(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($student)
+            ->postJson('/ai-chat/conversations', ['message' => str_repeat('あ', 2001)])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.message.0', '質問内容は2,000文字以内で入力してください。');
+    }
+
+    public function test_store_json_includes_section_title_in_gemini_system_instruction(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $section = Section::factory()->published()->create(['title' => 'テスト用教材タイトル']);
+        Enrollment::factory()->learning()->create([
+            'user_id' => $student->id,
+            'certification_id' => $section->chapter->part->certification_id,
+        ]);
+
+        $this->actingAs($student)
+            ->postJson('/ai-chat/conversations', ['section_id' => $section->id, 'message' => '質問'])
+            ->assertCreated();
+
+        Http::assertSent(fn ($request) => str_contains(
+            json_encode($request->data(), JSON_UNESCAPED_UNICODE),
+            '受講生が閲覧中の教材: テスト用教材タイトル',
+        ));
+    }
+
+    public function test_store_message_is_forbidden_for_another_student_and_saves_nothing(): void
+    {
+        $owner = User::factory()->student()->inProgress()->create();
+        $other = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $owner->id]);
+
+        $this->actingAs($other)
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['message' => '割り込み'])
+            ->assertForbidden();
+
+        Http::assertNothingSent();
+        $this->assertSame(0, AiChatMessage::query()->count());
+    }
+
+    public function test_store_message_is_forbidden_for_admin(): void
+    {
+        $owner = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $owner->id]);
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['message' => '質問'])
+            ->assertForbidden();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_guest_html_request_is_redirected_to_login(): void
+    {
+        $this->get('/ai-chat')->assertRedirect(route('login'));
+    }
+
+    public function test_show_returns_404_for_missing_conversation(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($student)
+            ->getJson('/ai-chat/conversations/01HZZZZZZZZZZZZZZZZZZZZZZZ')
+            ->assertNotFound();
+    }
+
+    public function test_update_html_redirects_with_success_flash(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $student->id, 'title' => '旧']);
+
+        $this->actingAs($student)
+            ->patch(route('ai-chat.conversations.update', $conversation), ['title' => '新'])
+            ->assertRedirect(route('ai-chat.conversations.show', $conversation))
+            ->assertSessionHas('success', '会話タイトルを更新しました。');
+    }
+
+    public function test_destroy_html_redirects_to_index_and_cascades_messages(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $student->id]);
+        AiChatMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'status' => 'completed',
+            'content' => '質問',
+        ]);
+
+        $this->actingAs($student)
+            ->delete(route('ai-chat.conversations.destroy', $conversation))
+            ->assertRedirect(route('ai-chat.index'))
+            ->assertSessionHas('success', '会話を削除しました。');
+
+        $this->assertSame(0, AiChatMessage::query()->count());
+    }
+
+    public function test_title_of_101_characters_is_rejected_with_exact_message(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $student->id]);
+
+        $this->actingAs($student)
+            ->patchJson(route('ai-chat.conversations.update', $conversation), ['title' => str_repeat('あ', 101)])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['title']);
+    }
+
     /**
      * @return array<string, mixed>
      */
