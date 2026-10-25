@@ -525,6 +525,100 @@ class AiChatConversationControllerTest extends TestCase
             ->assertJsonValidationErrors(['title' => 'タイトルは100文字以内で入力してください。']);
     }
 
+    public function test_store_message_rejects_blank_content_with_exact_message_and_does_not_count_usage(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $student->id]);
+
+        $this->actingAs($student)
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['content' => '  '])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.content.0', '質問内容は必須です。');
+
+        $this->assertSame(0, AiChatDailyUsage::query()->where('user_id', $student->id)->value('count') ?? 0);
+    }
+
+    public function test_update_rejects_blank_title_with_exact_message(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $student->id, 'title' => '旧']);
+
+        $this->actingAs($student)
+            ->patchJson(route('ai-chat.conversations.update', $conversation), ['title' => ' '])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.title.0', 'タイトルは必須です。');
+    }
+
+    public function test_store_json_returns_500_with_exact_unavailable_message(): void
+    {
+        config(['ai-chat.gemini.api_key' => null]);
+        $student = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($student)
+            ->postJson('/ai-chat/conversations', ['message' => '質問'])
+            ->assertStatus(500)
+            ->assertJsonPath('message', 'AI 相談機能は現在ご利用いただけません');
+    }
+
+    public function test_store_message_returns_429_with_exact_limit_message(): void
+    {
+        config(['ai-chat.daily_limit' => 1]);
+        $student = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $student->id]);
+        AiChatDailyUsage::query()->create([
+            'user_id' => $student->id,
+            'usage_date' => now('Asia/Tokyo')->toDateString(),
+            'count' => 1,
+        ]);
+
+        $this->actingAs($student)
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['content' => '質問'])
+            ->assertStatus(429)
+            ->assertJsonPath('message', '本日の利用上限に達しました。明日 0:00 以降に再度ご利用ください。');
+    }
+
+    public function test_changing_daily_limit_config_applies_to_next_send(): void
+    {
+        config(['ai-chat.daily_limit' => 1]);
+        $student = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $student->id]);
+
+        $this->actingAs($student)
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['content' => '1回目'])
+            ->assertOk();
+
+        $this->actingAs($student)
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['content' => '2回目'])
+            ->assertStatus(429);
+    }
+
+    public function test_new_conversation_with_first_question_counts_as_one_usage(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($student)
+            ->postJson('/ai-chat/conversations', ['message' => '最初の質問'])
+            ->assertCreated();
+
+        $this->assertSame(1, AiChatDailyUsage::query()->where('user_id', $student->id)->value('count'));
+    }
+
+    public function test_deleting_conversation_does_not_reset_daily_usage(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $conversation = AiChatConversation::factory()->create(['user_id' => $student->id]);
+
+        $this->actingAs($student)
+            ->postJson(route('ai-chat.conversations.messages.store', $conversation), ['content' => '質問'])
+            ->assertOk();
+
+        $this->actingAs($student)
+            ->deleteJson(route('ai-chat.conversations.destroy', $conversation))
+            ->assertNoContent();
+
+        $this->assertSame(1, AiChatDailyUsage::query()->where('user_id', $student->id)->value('count'));
+    }
+
     public function test_store_message_saves_model_and_token_usage_on_assistant_message(): void
     {
         $student = User::factory()->student()->inProgress()->create();
