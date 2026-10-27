@@ -141,6 +141,21 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 `.env.example` をコピーするだけで、すべての機能がローカルで動作します（メールは Mailpit に配信されます）。
 
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` — コーチの Google カレンダー連携に使用します。Google Cloud Console で OAuth クライアント（ウェブアプリケーション）を作成し、承認済みのリダイレクト URI に `GOOGLE_REDIRECT_URI` の値を登録してください。未設定の場合、連携操作は失敗します（面談予約自体は影響を受けません）。なお、連携で保存するアクセストークン・リフレッシュトークンは現状暗号化していません。本番運用ではトークンの暗号化を推奨します
+- `STRIPE_SECRET` / `STRIPE_WEBHOOK_SECRET` — 追加面談パックの Stripe Checkout 決済および Webhook 署名検証に使用します。Stripe ダッシュボードで取得したテスト用 API キー（`sk_test_...`）と Webhook 署名シークレット（`whsec_...`）を設定してください。未設定の場合、購入開始時に「決済画面の作成に失敗しました。」と表示され決済画面へ進めません
 - `PUSHER_*` — チャットのリアルタイム配信に使用します。有効にする場合は Pusher のキーを取得して設定し、`BROADCAST_DRIVER=pusher` に変更してください。未設定（既定の `BROADCAST_DRIVER=log`）でもメッセージの送受信自体は動作し、相手画面へのリアルタイム反映のみ行われません
+
+### Stripe Webhook（追加面談購入）の動作確認手順
+
+Stripe CLI を利用してローカル環境で決済完了や Webhook 受信の動作確認を行えます。
+
+```bash
+# 1. Stripe CLI でローカルへ Webhook イベントを転送
+stripe listen --forward-to localhost:8000/webhooks/stripe
+
+# 2. 表示された Webhook signing secret (whsec_...) を .env の STRIPE_WEBHOOK_SECRET に設定
+
+# 3. 決済完了イベントのテスト発火
+stripe trigger checkout.session.completed
+```
 
 新しい環境変数やセットアップ手順を追加した場合は、`.env.example` と本 README に追記し、チームの誰でも環境を再現できる状態を保ってください。

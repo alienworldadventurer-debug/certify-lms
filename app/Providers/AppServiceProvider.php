@@ -16,7 +16,10 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->singleton(StripeClient::class, fn (): StripeClient => new StripeClient((string) config('services.stripe.secret')));
+        $this->app->singleton(StripeClient::class, fn (): StripeClient => new StripeClient([
+            'api_key' => (string) config('services.stripe.secret'),
+            'stripe_version' => '2023-08-16',
+        ]));
     }
 
     public function boot(): void

@@ -43,7 +43,7 @@ class StripeCheckoutService
                 'metadata' => ['user_id' => $user->id],
             ]);
 
-            $session = $this->stripe->checkout->sessions->create([
+            $sessionParams = [
                 'mode' => 'payment',
                 'customer' => $customer->id,
                 'line_items' => [[
@@ -57,8 +57,13 @@ class StripeCheckoutService
                 'success_url' => route('meeting-quota.success').'?session_id={CHECKOUT_SESSION_ID}',
                 'cancel_url' => route('meeting-quota.checkout', ['canceled' => 1]),
                 'metadata' => ['payment_id' => $paymentId],
-                'payment_intent_data' => ['metadata' => ['payment_id' => $paymentId]],
-            ]);
+            ];
+
+            if ($pack->price > 0) {
+                $sessionParams['payment_intent_data'] = ['metadata' => ['payment_id' => $paymentId]];
+            }
+
+            $session = $this->stripe->checkout->sessions->create($sessionParams);
         } catch (ApiErrorException $e) {
             Log::error('Stripe Checkout Session の作成に失敗しました。', ['message' => $e->getMessage()]);
 
