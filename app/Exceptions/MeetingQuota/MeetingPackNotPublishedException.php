@@ -14,6 +14,6 @@ final class MeetingPackNotPublishedException extends UnprocessableEntityHttpExce
 {
     public function __construct(?\Throwable $previous = null)
     {
-        parent::__construct(null, $previous);
+        parent::__construct('', $previous);
     }
 }

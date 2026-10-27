@@ -65,8 +65,8 @@ class StripeCheckoutService
             return null;
         }
 
-        Payment::create([
-            'id' => $paymentId,
+        // Stripe metadata に渡した ID と一致させるため、id は fillable 外のため個別に代入する
+        $payment = new Payment([
             'user_id' => $user->id,
             'meeting_pack_id' => $pack->id,
             'quantity' => $pack->meeting_count,
@@ -74,6 +74,8 @@ class StripeCheckoutService
             'status' => PaymentStatus::Pending,
             'stripe_checkout_session_id' => $session->id,
         ]);
+        $payment->id = $paymentId;
+        $payment->save();
 
         return $session->url;
     }
