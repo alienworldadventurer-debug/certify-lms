@@ -6,6 +6,7 @@ namespace Tests\Feature\Http\MeetingPack;
 
 use App\Enums\MeetingPackStatus;
 use App\Models\MeetingPack;
+use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -80,6 +81,27 @@ class CrudTest extends TestCase
         $response->assertSee('この SKU の購入はまだありません。');
         $response->assertSee($admin->name);
         $response->assertSee($pack->created_at->format('Y-m-d H:i'));
+    }
+
+    public function test_admin_detail_shows_purchase_history_for_the_pack(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $pack = MeetingPack::factory()->create([
+            'created_by_user_id' => $admin->id,
+            'updated_by_user_id' => $admin->id,
+        ]);
+        $buyer = User::factory()->student()->create(['name' => '購入テスト受講生']);
+        Payment::factory()->succeeded()->create([
+            'user_id' => $buyer->id,
+            'meeting_pack_id' => $pack->id,
+        ]);
+
+        $response = $this->actingAs($admin)
+            ->get(route('admin.meeting-packs.show', $pack));
+
+        $response->assertOk();
+        $response->assertSee('購入テスト受講生');
+        $response->assertDontSee('この SKU の購入はまだありません。');
     }
 
     public function test_admin_can_open_create_and_edit_forms(): void
