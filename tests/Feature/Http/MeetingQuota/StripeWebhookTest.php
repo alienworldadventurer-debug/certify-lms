@@ -155,6 +155,51 @@ class StripeWebhookTest extends TestCase
         $this->assertDatabaseHas('meeting_quota_transactions', ['related_payment_id' => $payment->id, 'amount' => 5]);
     }
 
+    public function test_zero_yen_session_without_payment_required_grants_quota(): void
+    {
+        $payment = $this->pendingPayment(quantity: 4, price: 0);
+
+        $this->postEvent('checkout.session.completed', [
+            'object' => 'checkout.session',
+            'id' => 'cs_test_wh',
+            'payment_status' => 'no_payment_required',
+            'payment_intent' => null,
+        ])->assertOk();
+
+        $payment->refresh();
+        $this->assertSame(PaymentStatus::Succeeded, $payment->status);
+        $this->assertNull($payment->stripe_payment_intent_id);
+        $this->assertDatabaseHas('meeting_quota_transactions', [
+            'user_id' => $payment->user_id,
+            'type' => MeetingQuotaTransactionType::Purchased->value,
+            'amount' => 4,
+            'related_payment_id' => $payment->id,
+        ]);
+    }
+
+    public function test_completion_after_student_ended_still_grants_quota(): void
+    {
+        $student = User::factory()->student()->graduated()->create();
+        $pack = MeetingPack::factory()->published()->create(['meeting_count' => 5, 'price' => 10000]);
+        $payment = Payment::factory()->pending()->create([
+            'user_id' => $student->id,
+            'meeting_pack_id' => $pack->id,
+            'quantity' => 5,
+            'amount' => 10000,
+            'stripe_checkout_session_id' => 'cs_test_wh',
+        ]);
+
+        $this->postEvent('checkout.session.completed', $this->completedSession())->assertOk();
+
+        $this->assertSame(PaymentStatus::Succeeded, $payment->fresh()->status);
+        $this->assertDatabaseHas('meeting_quota_transactions', [
+            'user_id' => $student->id,
+            'type' => MeetingQuotaTransactionType::Purchased->value,
+            'amount' => 5,
+            'related_payment_id' => $payment->id,
+        ]);
+    }
+
     public function test_unknown_session_returns_200_without_changes(): void
     {
         $this->pendingPayment();

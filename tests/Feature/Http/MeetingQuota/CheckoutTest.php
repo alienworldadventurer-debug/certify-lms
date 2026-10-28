@@ -9,6 +9,7 @@ use App\Models\MeetingPack;
 use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Stripe\ApiRequestor;
 use Stripe\StripeClient;
 use Tests\Support\FakeStripeHttpClient;
@@ -150,6 +151,89 @@ class CheckoutTest extends TestCase
         $response->assertRedirect();
         $response->assertSessionHas('error', '決済画面の作成に失敗しました。');
         $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_guest_cannot_post_checkout(): void
+    {
+        $pack = MeetingPack::factory()->published()->create();
+
+        $this->post(route('meeting-quota.checkout.create'), ['meeting_pack_id' => $pack->id])
+            ->assertRedirect(route('login'));
+
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertSame([], $this->stripeHttp->requests);
+    }
+
+    public function test_non_student_cannot_post_checkout(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $pack = MeetingPack::factory()->published()->create();
+
+        $this->actingAs($admin)->post(route('meeting-quota.checkout.create'), [
+            'meeting_pack_id' => $pack->id,
+        ])->assertForbidden();
+
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertSame([], $this->stripeHttp->requests);
+    }
+
+    public function test_inactive_student_cannot_post_checkout(): void
+    {
+        $graduated = User::factory()->student()->graduated()->create();
+        $pack = MeetingPack::factory()->published()->create();
+
+        $this->actingAs($graduated)->post(route('meeting-quota.checkout.create'), [
+            'meeting_pack_id' => $pack->id,
+        ])->assertForbidden();
+
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertSame([], $this->stripeHttp->requests);
+    }
+
+    public function test_store_shows_exact_message_when_meeting_pack_id_is_missing(): void
+    {
+        $this->actingAs($this->student())
+            ->post(route('meeting-quota.checkout.create'), [])
+            ->assertSessionHasErrors(['meeting_pack_id' => '面談パックを選択してください。']);
+    }
+
+    public function test_store_shows_exact_message_when_meeting_pack_id_is_not_ulid(): void
+    {
+        $this->actingAs($this->student())
+            ->post(route('meeting-quota.checkout.create'), ['meeting_pack_id' => 'not-a-ulid'])
+            ->assertSessionHasErrors(['meeting_pack_id' => '面談パックの指定が正しくありません。']);
+
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_store_shows_exact_message_when_meeting_pack_does_not_exist(): void
+    {
+        $this->actingAs($this->student())
+            ->post(route('meeting-quota.checkout.create'), ['meeting_pack_id' => (string) Str::ulid()])
+            ->assertSessionHasErrors(['meeting_pack_id' => '面談パックの指定が正しくありません。']);
+
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_store_zero_yen_pack_starts_checkout_without_payment_intent_data(): void
+    {
+        $student = $this->student();
+        $pack = MeetingPack::factory()->published()->create(['meeting_count' => 2, 'price' => 0]);
+
+        $response = $this->actingAs($student)->post(route('meeting-quota.checkout.create'), [
+            'meeting_pack_id' => $pack->id,
+        ]);
+
+        $response->assertRedirect('https://checkout.stripe.com/pay/cs_test_new');
+
+        $payment = Payment::query()->firstOrFail();
+        $this->assertSame(0, $payment->amount);
+        $this->assertSame(2, $payment->quantity);
+        $this->assertSame(PaymentStatus::Pending, $payment->status);
+
+        $sessionRequest = collect($this->stripeHttp->requests)->first(fn ($r) => str_contains($r['url'], '/checkout/sessions'));
+        $this->assertSame(0, $sessionRequest['params']['line_items'][0]['price_data']['unit_amount']);
+        $this->assertArrayNotHasKey('payment_intent_data', $sessionRequest['params']);
     }
 
     public function test_success_page_shows_own_payment(): void
