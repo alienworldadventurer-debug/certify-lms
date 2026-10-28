@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Enums\MeetingPackStatus;
 use App\Http\Requests\MeetingQuota\CheckoutRequest;
 use App\Models\MeetingPack;
 use App\Services\StripeCheckoutService;
+use App\UseCases\MeetingQuota\CheckoutAction;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -25,18 +25,16 @@ class MeetingQuotaCheckoutController extends Controller
         }
 
         $plans = MeetingPack::query()
-            ->where('status', MeetingPackStatus::Published)
-            ->orderBy('sort_order')
+            ->published()
+            ->ordered()
             ->get();
 
         return view('meeting-quota.checkout-select', ['plans' => $plans]);
     }
 
-    public function store(CheckoutRequest $request, StripeCheckoutService $service): RedirectResponse
+    public function store(CheckoutRequest $request, CheckoutAction $checkout): RedirectResponse
     {
-        $pack = MeetingPack::query()->findOrFail($request->validated('meeting_pack_id'));
-
-        $url = $service->startCheckout($request->user(), $pack);
+        $url = $checkout($request->user(), $request->validated('meeting_pack_id'));
 
         if ($url === null) {
             return back()->with('error', '決済画面の作成に失敗しました。');
