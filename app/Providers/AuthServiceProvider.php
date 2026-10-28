@@ -24,6 +24,7 @@ use App\Models\MockExam;
 use App\Models\MockExamQuestion;
 use App\Models\MockExamSession;
 use App\Models\Part;
+use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\QaReply;
 use App\Models\QaThread;
@@ -59,6 +60,7 @@ use App\Policies\MockExamSessionPolicy;
 use App\Policies\NotificationPolicy;
 use App\Policies\PartPolicy;
 use App\Policies\PartViewPolicy;
+use App\Policies\PaymentPolicy;
 use App\Policies\PlanPolicy;
 use App\Policies\QaReplyPolicy;
 use App\Policies\QaThreadPolicy;
@@ -86,6 +88,7 @@ class AuthServiceProvider extends ServiceProvider
      */
     protected $policies = [
         Invitation::class => InvitationPolicy::class,
+        Payment::class => PaymentPolicy::class,
         User::class => UserPolicy::class,
         Announcement::class => AnnouncementPolicy::class,
         Certification::class => CertificationPolicy::class,

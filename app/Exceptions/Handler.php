@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Exceptions;
 
+use App\Exceptions\MeetingQuota\MeetingPackNotPublishedException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\JsonResponse;
@@ -61,6 +62,10 @@ class Handler extends ExceptionHandler
         // JSON 経由は何も返さない(null を返してデフォルト挙動 = status code + JSON body)。
         $this->renderable(function (HttpException $e, Request $request) {
             if ($request->expectsJson()) {
+                return null;
+            }
+
+            if ($e instanceof MeetingPackNotPublishedException) {
                 return null;
             }
 

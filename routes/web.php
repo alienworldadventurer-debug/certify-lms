@@ -22,6 +22,7 @@ use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\LearningHourTargetController;
 use App\Http\Controllers\MeetingController;
 use App\Http\Controllers\MeetingPackController;
+use App\Http\Controllers\MeetingQuotaCheckoutController;
 use App\Http\Controllers\MeetingQuotaHistoryController;
 use App\Http\Controllers\MockExamAnswerController;
 use App\Http\Controllers\MockExamCatalogController;
@@ -48,6 +49,7 @@ use App\Http\Controllers\Settings\AvailabilityController as SettingsAvailability
 use App\Http\Controllers\Settings\GoogleCalendarController;
 use App\Http\Controllers\Settings\ProfileController as SettingsProfileController;
 use App\Http\Controllers\Settings\SettingsDefaultEnrollmentController;
+use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WeakDrillController;
 use App\Http\Controllers\WeakDrillResultController;
@@ -611,7 +613,16 @@ Route::middleware(['auth', 'role:coach'])
 Route::middleware(['auth', 'role:student', 'active-learning'])->prefix('meeting-quota')->name('meeting-quota.')->group(function () {
     // 面談回数履歴
     Route::get('history', [MeetingQuotaHistoryController::class, 'index'])->name('history');
+
+    // 追加面談の購入(Stripe Checkout)
+    Route::get('checkout', [MeetingQuotaCheckoutController::class, 'show'])->name('checkout');
+    Route::get('checkout-select', [MeetingQuotaCheckoutController::class, 'show'])->name('checkout.select');
+    Route::post('checkout', [MeetingQuotaCheckoutController::class, 'store'])->name('checkout.create');
+    Route::get('success', [MeetingQuotaCheckoutController::class, 'success'])->name('success');
 });
+
+// Stripe Webhook(認証なし。署名検証は Controller 内で行う。CSRF 除外は VerifyCsrfToken)
+Route::post('webhooks/stripe', [StripeWebhookController::class, 'handle'])->name('webhooks.stripe');
 
 // ============================================================
 // AI 相談(受講生専用。機能スイッチ OFF のときは全ルート 404)

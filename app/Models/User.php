@@ -188,6 +188,14 @@ class User extends Authenticatable
     }
 
     /**
+     * @return HasMany<Payment, $this>
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
+
+    /**
      * @return HasMany<MeetingQuotaTransaction, $this>
      */
     public function meetingQuotaTransactions(): HasMany
