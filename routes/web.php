@@ -6,6 +6,7 @@ use App\Http\Controllers\AiChatConversationController;
 use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\Auth\OnboardingController;
 use App\Http\Controllers\BrowseController;
+use App\Http\Controllers\CertificateDownloadController;
 use App\Http\Controllers\CertificationCatalogController;
 use App\Http\Controllers\CertificationCategoryController;
 use App\Http\Controllers\CertificationCoachAssignmentController;
@@ -541,6 +542,14 @@ Route::middleware(['auth', 'role:student', 'active-learning'])->group(function (
 Route::middleware('auth')->group(function () {
     Route::get('meetings/{meeting}', [MeetingController::class, 'show'])->name('meetings.show');
     Route::post('meetings/{meeting}/cancel', [MeetingController::class, 'cancel'])->name('meetings.cancel');
+});
+
+// ============================================================
+// 当事者共通 — 修了証 PDF ダウンロード(認可は CertificatePolicy)
+// ============================================================
+Route::middleware('auth')->group(function () {
+    Route::get('certificates/{certificate}/download', [CertificateDownloadController::class, 'download'])
+        ->name('certificates.download');
 });
 
 // ============================================================

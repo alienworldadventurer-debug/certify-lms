@@ -10,6 +10,7 @@ use App\Models\Enrollment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -84,5 +85,17 @@ class CertificateTest extends TestCase
 
         // Assert
         $this->assertInstanceOf(Carbon::class, $fresh->issued_at);
+    }
+
+    public function test_factory_with_pdf_file_creates_file_on_private_disk(): void
+    {
+        // Arrange
+        Storage::fake('private');
+
+        // Act
+        $certificate = Certificate::factory()->withPdfFile()->create();
+
+        // Assert
+        Storage::disk('private')->assertExists($certificate->pdf_path);
     }
 }

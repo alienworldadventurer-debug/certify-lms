@@ -9,6 +9,7 @@ use App\Exceptions\Enrollment\CompletionNotEligibleException;
 use App\Exceptions\Enrollment\EnrollmentNotLearningException;
 use App\Models\Certificate;
 use App\Models\Enrollment;
+use App\Services\CertificatePdfService;
 use App\Services\CompletionEligibilityService;
 use App\Services\EnrollmentStatusChangeService;
 use App\UseCases\Certificate\IssueAction as IssueCertificateAction;
@@ -25,6 +26,7 @@ use Illuminate\Support\Facades\DB;
  * 2. Enrollment を status=passed / passed_at=now() に更新
  * 3. EnrollmentStatusLog 記録(from=learning / to=passed / changed_by=本人 / reason='受講生による修了証受領')
  * 4. IssueCertificateAction を呼んで Certificate 発行
+ * 5. CertificatePdfService で修了証 PDF を生成・保存(失敗時は例外をスローし全体をロールバック)
  *
  * 修了通知は送らない: 本人の操作直後のリダイレクト先画面で修了証 PDF DL リンクを提示するため、別途通知は冗長。
  */
@@ -34,11 +36,13 @@ final class ReceiveCertificateAction
         private readonly CompletionEligibilityService $eligibility,
         private readonly EnrollmentStatusChangeService $statusChanger,
         private readonly IssueCertificateAction $issueCertificate,
+        private readonly CertificatePdfService $pdfService,
     ) {}
 
     /**
      * @throws CompletionNotEligibleException 公開模試すべてに合格していない
      * @throws EnrollmentNotLearningException Policy の事前判定漏れに対する整合性ガード
+     * @throws \RuntimeException 修了証 PDF の生成・保存に失敗した場合(全体をロールバック)
      */
     public function __invoke(Enrollment $enrollment): Certificate
     {
@@ -65,6 +69,8 @@ final class ReceiveCertificateAction
             );
 
             $certificate = ($this->issueCertificate)($enrollment->refresh());
+
+            $this->pdfService->generateAndStore($certificate);
 
             return $certificate;
         });
