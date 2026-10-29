@@ -7,6 +7,7 @@ namespace Tests\Feature\UseCases\Enrollment;
 use App\Enums\EnrollmentStatus;
 use App\Exceptions\Enrollment\CompletionNotEligibleException;
 use App\Exceptions\Enrollment\EnrollmentNotLearningException;
+use App\Models\Certificate;
 use App\Models\Certification;
 use App\Models\Enrollment;
 use App\Models\MockExam;
@@ -124,6 +125,34 @@ class ReceiveCertificateActionTest extends TestCase
         $this->assertDatabaseMissing('enrollment_status_logs', ['enrollment_id' => $enrollment->id]);
         $this->assertSame(EnrollmentStatus::Learning, $enrollment->refresh()->status);
         $this->assertNull($enrollment->passed_at);
+    }
+
+    public function test_can_retry_and_issue_certificate_after_pdf_generation_failure(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $enrollment = Enrollment::factory()->for($student)->for($certification)->learning()->create();
+        $exam = MockExam::factory()->for($certification)->create(['is_published' => true]);
+        MockExamSession::factory()->for($enrollment)->for($exam)->create(['pass' => true]);
+
+        $disk = Mockery::mock(Filesystem::class);
+        $disk->shouldReceive('put')->once()->andReturn(false);
+        $disk->shouldReceive('exists')->andReturn(false);
+        Storage::set('private', $disk);
+
+        try {
+            app(ReceiveCertificateAction::class)($enrollment);
+            $this->fail('RuntimeException が throw されるはず');
+        } catch (RuntimeException) {
+            // 1回目は PDF 保存失敗
+        }
+
+        Storage::fake('private');
+        app(ReceiveCertificateAction::class)($enrollment->refresh());
+
+        $certificate = Certificate::where('enrollment_id', $enrollment->id)->sole();
+        $this->assertTrue(Storage::disk('private')->exists($certificate->pdf_path));
+        $this->assertSame(EnrollmentStatus::Passed, $enrollment->refresh()->status);
     }
 
     public function test_no_certificate_is_created_when_published_exam_count_is_zero(): void

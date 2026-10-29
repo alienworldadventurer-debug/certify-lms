@@ -40,6 +40,14 @@ class CertificatePolicyTest extends TestCase
         $this->assertTrue($this->policy->download($student, $certificate));
     }
 
+    public function test_owner_student_can_download_own_certificate_while_in_progress(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certificate = Certificate::factory()->create(['user_id' => $student->id]);
+
+        $this->assertTrue($this->policy->download($student, $certificate));
+    }
+
     public function test_student_cannot_download_other_student_certificate(): void
     {
         $student = User::factory()->student()->inProgress()->create();

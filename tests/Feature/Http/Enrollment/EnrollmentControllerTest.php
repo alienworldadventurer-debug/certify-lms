@@ -10,7 +10,10 @@ use App\Models\Enrollment;
 use App\Models\MockExam;
 use App\Models\MockExamSession;
 use App\Models\User;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
+use Mockery;
 use Tests\TestCase;
 
 /**
@@ -20,6 +23,12 @@ use Tests\TestCase;
 class EnrollmentControllerTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Storage::fake('private');
+    }
 
     public function test_index_returns_student_enrollments_only(): void
     {
@@ -251,6 +260,43 @@ class EnrollmentControllerTest extends TestCase
         $this->assertDatabaseHas('certificates', ['enrollment_id' => $enrollment->id]);
     }
 
+    public function test_receive_certificate_returns_500_and_rolls_back_when_pdf_storage_fails(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $enrollment = Enrollment::factory()->for($student)->for($certification)->learning()->create();
+        $exam = MockExam::factory()->for($certification)->create(['is_published' => true]);
+        MockExamSession::factory()->for($enrollment)->for($exam)->create(['pass' => true]);
+
+        $this->useFailingPrivateDisk();
+
+        $response = $this->actingAs($student)->post(route('enrollments.receiveCertificate', $enrollment));
+
+        $response->assertStatus(500);
+        $this->assertSame(EnrollmentStatus::Learning, $enrollment->fresh()->status);
+        $this->assertDatabaseCount('certificates', 0);
+        $this->assertDatabaseMissing('enrollment_status_logs', ['enrollment_id' => $enrollment->id]);
+    }
+
+    public function test_receive_certificate_can_be_retried_after_pdf_storage_failure(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $enrollment = Enrollment::factory()->for($student)->for($certification)->learning()->create();
+        $exam = MockExam::factory()->for($certification)->create(['is_published' => true]);
+        MockExamSession::factory()->for($enrollment)->for($exam)->create(['pass' => true]);
+
+        $this->useFailingPrivateDisk();
+        $this->actingAs($student)->post(route('enrollments.receiveCertificate', $enrollment))->assertStatus(500);
+
+        Storage::fake('private');
+        $response = $this->actingAs($student)->post(route('enrollments.receiveCertificate', $enrollment));
+
+        $response->assertRedirect(route('enrollments.show', $enrollment));
+        $this->assertSame(EnrollmentStatus::Passed, $enrollment->fresh()->status);
+        $this->assertDatabaseCount('certificates', 1);
+    }
+
     public function test_receive_certificate_returns_409_when_not_eligible(): void
     {
         $student = User::factory()->student()->inProgress()->create();
@@ -283,5 +329,16 @@ class EnrollmentControllerTest extends TestCase
 
         // active-learning Middleware で 403
         $response->assertForbidden();
+    }
+
+    /**
+     * private ディスクの put() だけを失敗させ、PDF 保存失敗時の挙動を再現する。
+     */
+    private function useFailingPrivateDisk(): void
+    {
+        $disk = Mockery::mock(Filesystem::class)->shouldIgnoreMissing();
+        $disk->shouldReceive('put')->andReturn(false);
+
+        Storage::set('private', $disk);
     }
 }
