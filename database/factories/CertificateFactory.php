@@ -9,6 +9,7 @@ use App\Models\Certification;
 use App\Models\Enrollment;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -36,5 +37,12 @@ class CertificateFactory extends Factory
             'enrollment_id' => $enrollment->id,
             'certification_id' => $enrollment->certification_id,
         ]);
+    }
+
+    public function withPdfFile(string $content = '%PDF-1.4 dummy pdf content'): static
+    {
+        return $this->afterCreating(function (Certificate $certificate) use ($content) {
+            Storage::disk('private')->put($certificate->pdf_path, $content);
+        });
     }
 }
