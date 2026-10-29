@@ -13,7 +13,11 @@ use App\Models\MockExam;
 use App\Models\MockExamSession;
 use App\Models\User;
 use App\UseCases\Enrollment\ReceiveCertificateAction;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
+use Mockery;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -23,6 +27,12 @@ use Tests\TestCase;
 class ReceiveCertificateActionTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Storage::fake('private');
+    }
 
     public function test_successfully_issues_certificate_and_records_status_log_when_all_published_exams_passed(): void
     {
@@ -36,6 +46,7 @@ class ReceiveCertificateActionTest extends TestCase
 
         $this->assertSame($enrollment->id, $certificate->enrollment_id);
         $this->assertSame($student->id, $certificate->user_id);
+        $this->assertTrue(Storage::disk('private')->exists($certificate->pdf_path));
         $this->assertDatabaseHas('enrollments', [
             'id' => $enrollment->id,
             'status' => EnrollmentStatus::Passed->value,
@@ -87,6 +98,32 @@ class ReceiveCertificateActionTest extends TestCase
         $this->expectException(EnrollmentNotLearningException::class);
 
         app(ReceiveCertificateAction::class)($enrollment);
+    }
+
+    public function test_rolls_back_everything_when_pdf_generation_fails(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $enrollment = Enrollment::factory()->for($student)->for($certification)->learning()->create();
+        $exam = MockExam::factory()->for($certification)->create(['is_published' => true]);
+        MockExamSession::factory()->for($enrollment)->for($exam)->create(['pass' => true]);
+
+        $disk = Mockery::mock(Filesystem::class);
+        $disk->shouldReceive('put')->once()->andReturn(false);
+        $disk->shouldReceive('exists')->andReturn(false);
+        Storage::shouldReceive('disk')->with('private')->andReturn($disk);
+
+        try {
+            app(ReceiveCertificateAction::class)($enrollment);
+            $this->fail('RuntimeException が throw されるはず');
+        } catch (RuntimeException) {
+            // PDF 保存失敗は RuntimeException として伝播する
+        }
+
+        $this->assertDatabaseCount('certificates', 0);
+        $this->assertDatabaseMissing('enrollment_status_logs', ['enrollment_id' => $enrollment->id]);
+        $this->assertSame(EnrollmentStatus::Learning, $enrollment->refresh()->status);
+        $this->assertNull($enrollment->passed_at);
     }
 
     public function test_no_certificate_is_created_when_published_exam_count_is_zero(): void
