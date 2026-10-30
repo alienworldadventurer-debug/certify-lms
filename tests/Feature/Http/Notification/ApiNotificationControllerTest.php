@@ -76,6 +76,22 @@ class ApiNotificationControllerTest extends TestCase
             ->assertJsonValidationErrors(['tab']);
     }
 
+    public function test_empty_tab_returns_422_and_omitted_tab_defaults_to_all(): void
+    {
+        $user = User::factory()->student()->inProgress()->create();
+        $this->createNotification($user);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson(route('api.v1.notifications.index', ['tab' => '']))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['tab']);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson(route('api.v1.notifications.index'))
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
+    }
+
     public function test_guests_receive_401_json(): void
     {
         $this->getJson(route('api.v1.notifications.index'))->assertUnauthorized();

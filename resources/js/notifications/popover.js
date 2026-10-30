@@ -59,7 +59,7 @@ export function initNotificationPopover() {
             trigger.setAttribute('aria-label', `通知 (${count} 件未読)`);
         }
         if (unreadCountEl) {
-            unreadCountEl.textContent = String(count);
+            unreadCountEl.textContent = badgeText(count);
         }
     };
 
