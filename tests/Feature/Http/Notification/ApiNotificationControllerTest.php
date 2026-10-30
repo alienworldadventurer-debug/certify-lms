@@ -185,6 +185,59 @@ class ApiNotificationControllerTest extends TestCase
             ->assertJsonPath('data.0.url', route('meetings.show', $meeting));
     }
 
+    public function test_url_points_to_notification_detail_for_admin_announcements(): void
+    {
+        $user = User::factory()->student()->inProgress()->create();
+        $notification = $this->createNotification($user, [
+            'notification_type' => 'admin_announcement',
+            'target_type' => null,
+            'target_id' => null,
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson(route('api.v1.notifications.index'))
+            ->assertOk()
+            ->assertJsonPath('data.0.url', route('notifications.show', $notification->id));
+    }
+
+    public function test_url_falls_back_to_notification_list_when_target_is_inaccessible(): void
+    {
+        $user = User::factory()->student()->inProgress()->create();
+        $this->createNotification($user, [
+            'target_type' => 'meeting',
+            'target_id' => (string) Str::ulid(),
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson(route('api.v1.notifications.index'))
+            ->assertOk()
+            ->assertJsonPath('data.0.url', route('notifications.index'));
+    }
+
+    public function test_unread_tab_returns_old_unread_beyond_latest_twenty_items(): void
+    {
+        $user = User::factory()->student()->inProgress()->create();
+        $oldUnread = $this->createNotification($user);
+        $oldUnread->forceFill(['created_at' => now()->subDays(2)])->save();
+
+        foreach (range(1, 20) as $_) {
+            $this->createNotification($user, readAt: now());
+        }
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson(route('api.v1.notifications.index', ['tab' => 'unread']))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $oldUnread->id)
+            ->assertJsonPath('unread_count', 1);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson(route('api.v1.notifications.index'))
+            ->assertOk()
+            ->assertJsonCount(20, 'data')
+            ->assertJsonMissing(['id' => $oldUnread->id]);
+    }
+
     private function createNotification(
         User $user,
         array $data = [],
