@@ -90,6 +90,32 @@ class TermJudgementServiceTest extends TestCase
         $this->assertSame(TermType::MockPractice, $term);
     }
 
+    public function test_returns_mock_practice_when_both_canceled_and_in_progress_sessions_exist(): void
+    {
+        $enrollment = Enrollment::factory()->create(['current_term' => TermType::BasicLearning->value]);
+        $exam = MockExam::factory()->for($enrollment->certification)->create();
+        MockExamSession::factory()->for($enrollment)->for($exam)->create(['status' => 'canceled']);
+        MockExamSession::factory()->for($enrollment)->for($exam)->create(['status' => 'in_progress']);
+
+        $term = $this->service->recalculate($enrollment);
+
+        $this->assertSame(TermType::MockPractice, $term);
+        $this->assertSame(TermType::MockPractice, $enrollment->refresh()->current_term);
+    }
+
+    public function test_returns_basic_learning_when_both_canceled_and_not_started_sessions_exist(): void
+    {
+        $enrollment = Enrollment::factory()->create(['current_term' => TermType::MockPractice->value]);
+        $exam = MockExam::factory()->for($enrollment->certification)->create();
+        MockExamSession::factory()->for($enrollment)->for($exam)->create(['status' => 'canceled']);
+        MockExamSession::factory()->for($enrollment)->for($exam)->create(['status' => 'not_started']);
+
+        $term = $this->service->recalculate($enrollment);
+
+        $this->assertSame(TermType::BasicLearning, $term);
+        $this->assertSame(TermType::BasicLearning, $enrollment->refresh()->current_term);
+    }
+
     public function test_does_not_update_when_current_term_already_matches(): void
     {
         $enrollment = Enrollment::factory()->create(['current_term' => TermType::BasicLearning->value]);

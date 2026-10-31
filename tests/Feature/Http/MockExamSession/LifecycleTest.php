@@ -228,5 +228,38 @@ class LifecycleTest extends TestCase
         $this->actingAs($student)
             ->postJson(route('mock-exam-sessions.start', $session))
             ->assertForbidden();
+
+        $this->actingAs($student)
+            ->deleteJson(route('mock-exam-sessions.destroy', $session))
+            ->assertForbidden();
+    }
+
+    public function test_session_create_and_cancel_keeps_basic_learning_term(): void
+    {
+        $student = User::factory()->student()->create();
+        $cert = Certification::factory()->published()->create();
+        $enrollment = Enrollment::factory()->for($student)->for($cert)->learning()->create([
+            'current_term' => TermType::BasicLearning->value,
+        ]);
+        $mockExam = MockExam::factory()->forCertification($cert)->published()->create();
+        MockExamQuestion::factory()->forMockExam($mockExam)->withOptions()->create();
+
+        // 1. セッション作成 -> 基礎タームのまま
+        $this->actingAs($student)
+            ->post(route('mock-exam.sessions.store', ['enrollment' => $enrollment, 'mockExam' => $mockExam]))
+            ->assertRedirect();
+        $this->assertSame(TermType::BasicLearning, $enrollment->refresh()->current_term);
+
+        $session = MockExamSession::firstOrFail();
+
+        // 2. キャンセル -> 基礎タームのまま維持される
+        $this->actingAs($student)
+            ->delete(route('mock-exam-sessions.destroy', $session))
+            ->assertRedirect(route('mock-exam-sessions.index'))
+            ->assertSessionHas('success', '受験セッションをキャンセルしました。');
+
+        $session->refresh();
+        $this->assertSame(MockExamSessionStatus::Canceled, $session->status);
+        $this->assertSame(TermType::BasicLearning, $enrollment->refresh()->current_term);
     }
 }
