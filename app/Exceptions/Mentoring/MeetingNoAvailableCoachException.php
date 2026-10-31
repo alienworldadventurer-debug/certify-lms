@@ -8,8 +8,7 @@ use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Throwable;
 
 /**
- * 自動コーチ割当で候補が 0 名だった場合、または DB UNIQUE 制約 race condition で
- * 同時刻に別の受講生が先に予約を確定させた場合の例外。
+ * 自動コーチ割当で候補が 0 名だった場合、または並行予約で同時刻の枠が先に埋まった場合の例外。
  *
  * HTTP 409 として Handler が redirect+flash に変換する。
  */
