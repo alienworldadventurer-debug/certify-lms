@@ -7,6 +7,7 @@ declare(strict_types=1);
 
 use App\Models\Enrollment;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -33,12 +34,27 @@ try {
     $request->setUserResolver(fn () => $enrollment->user);
     $app->instance('request', $request);
     $response = $app['router']->dispatch($request);
-    // 予約成功は面談詳細 (/meetings/{id}) へのリダイレクトで判定する。失敗は別画面へ戻される。
     $location = (string) $response->headers->get('Location');
+    $path = (string) parse_url($location, PHP_URL_PATH);
+
+    // 予約成功は面談詳細 (meetings.show) への完全一致で判定する。拒否時は back() で予約画面へ戻る。
+    $meetingId = null;
+    try {
+        $matched = $app['router']->getRoutes()->match(Request::create($path, 'GET'));
+        if ($matched->getName() === 'meetings.show') {
+            $meetingId = $matched->parameter('meeting');
+        }
+    } catch (Throwable) {
+        $meetingId = null;
+    }
+    $isShow = $meetingId !== null && $path === route('meetings.show', ['meeting' => $meetingId], false);
+
+    $session = $response instanceof RedirectResponse ? $response->getSession() : null;
     echo json_encode([
-        'result' => preg_match('#/meetings/[^/]+$#', $location) === 1 ? 'success' : 'rejected',
+        'result' => $isShow ? 'success' : 'rejected',
         'status' => $response->getStatusCode(),
         'location' => $location,
+        'error' => $session?->get('error'),
     ]);
 } catch (Throwable $e) {
     echo json_encode([

@@ -53,6 +53,7 @@ class MeetingConcurrentBookingTest extends TestCase
 
         $monday = now()->startOfDay()->next(Carbon::MONDAY);
         $doubleBookings = [];
+        $rejectionViolations = [];
 
         for ($round = 0; $round < self::ROUNDS; $round++) {
             $scheduledAt = $monday->copy()->addWeeks($round)->setTime(10, 0);
@@ -75,6 +76,21 @@ class MeetingConcurrentBookingTest extends TestCase
                     json_encode($results, JSON_UNESCAPED_UNICODE),
                 );
             }
+
+            $rejected = collect($results)->where('result', 'rejected');
+            $rejectedWithError = $rejected->filter(
+                fn (array $result): bool => ($result['status'] ?? null) === 302
+                    && is_string($result['error'] ?? null)
+                    && $result['error'] !== '',
+            );
+            if ($rejected->count() !== 1 || $rejectedWithError->count() !== 1) {
+                $rejectionViolations[] = sprintf(
+                    'round=%d scheduled_at=%s 後着は 302 かつ error フラッシュ付きで拒否されること results=%s',
+                    $round,
+                    $scheduledAt->format('Y-m-d H:i'),
+                    json_encode($results, JSON_UNESCAPED_UNICODE),
+                );
+            }
         }
 
         $this->assertSame(
@@ -82,10 +98,16 @@ class MeetingConcurrentBookingTest extends TestCase
             $doubleBookings,
             '同一コーチ・同一時刻に対して並行予約が成立してはならない(成立した枠を列挙)',
         );
+        $this->assertSame(
+            [],
+            $rejectionViolations,
+            '後着は 302 リダイレクトと error フラッシュで拒否されなければならない(違反ラウンドを列挙)',
+        );
     }
 
     /**
-     * @param  list<Enrollment>  $enrollments
+     * @param list<Enrollment> $enrollments
+     *
      * @return list<array<string, mixed>>
      */
     private function runConcurrentBookings(array $enrollments, Carbon $scheduledAt): array
