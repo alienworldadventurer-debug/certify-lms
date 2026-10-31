@@ -296,6 +296,55 @@ class MeetingControllerTest extends TestCase
         );
     }
 
+    public function test_store_forbids_enrollment_owned_by_another_student(): void
+    {
+        $student = User::factory()->student()->inProgress()->create(['max_meetings' => 3]);
+        $other = User::factory()->student()->inProgress()->create(['max_meetings' => 3]);
+        $admin = User::factory()->admin()->create();
+        $coach = User::factory()->coach()->inProgress()->create([
+            'meeting_url' => 'https://meet.example.com/coach-room',
+        ]);
+        $certification = Certification::factory()->published()->create();
+        $this->attachCoach($certification, $coach, $admin);
+        CoachAvailability::factory()->forCoach($coach)->onDay(1)->timeRange('09:00:00', '18:00:00')->create();
+        $foreignEnrollment = Enrollment::factory()->for($other, 'user')->for($certification)->learning()->create();
+        $scheduledAt = now()->startOfDay()->next(Carbon::MONDAY)->setTime(10, 0); // 次の月曜 10:00(未来)
+
+        $response = $this->actingAs($student)->post(route('meetings.store', $foreignEnrollment), [
+            'scheduled_at' => $scheduledAt->format('Y-m-d\TH:i:s'),
+            'topic' => '相談したい',
+        ]);
+
+        $response->assertForbidden();
+        $this->assertDatabaseCount('meetings', 0);
+    }
+
+    public function test_store_with_zero_quota_redirects_with_error_and_creates_no_meeting(): void
+    {
+        $student = User::factory()->student()->inProgress()->create(['max_meetings' => 0]);
+        $admin = User::factory()->admin()->create();
+        $coach = User::factory()->coach()->inProgress()->create([
+            'meeting_url' => 'https://meet.example.com/coach-room',
+        ]);
+        $certification = Certification::factory()->published()->create();
+        $this->attachCoach($certification, $coach, $admin);
+        CoachAvailability::factory()->forCoach($coach)->onDay(1)->timeRange('09:00:00', '18:00:00')->create();
+        $enrollment = Enrollment::factory()->for($student, 'user')->for($certification)->learning()->create();
+        $scheduledAt = now()->startOfDay()->next(Carbon::MONDAY)->setTime(10, 0); // 次の月曜 10:00(未来)
+
+        $response = $this->actingAs($student)
+            ->from(route('meetings.create', $enrollment))
+            ->post(route('meetings.store', $enrollment), [
+                'scheduled_at' => $scheduledAt->format('Y-m-d\TH:i:s'),
+                'topic' => '相談したい',
+            ]);
+
+        $response->assertRedirect(route('meetings.create', $enrollment));
+        $response->assertSessionHas('error', '面談回数が不足しています。追加面談を購入するか、管理者にお問い合わせください。');
+        $this->assertDatabaseCount('meetings', 0);
+        $this->assertSame(0, $student->fresh()->max_meetings);
+    }
+
     public function test_cancel_refunds_meeting_quota(): void
     {
         // Arrange: 予約済面談と受講生を作成する。
