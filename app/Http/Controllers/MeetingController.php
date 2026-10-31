@@ -159,7 +159,7 @@ class MeetingController extends Controller
 
     /**
      * 受講生の予約申請。残面談回数を確認し、空き枠から過去実績最少のコーチを自動割当して reserved で確定する。
-     * 同時刻 race condition は (coach_id, scheduled_at) UNIQUE 違反として検知し 409 へ変換する。
+     * 同時刻 race condition は候補コーチ行と同時刻の予約行をロックして直列化し、409 で拒否する。
      */
     public function store(
         Enrollment $enrollment,
@@ -207,6 +207,7 @@ class MeetingController extends Controller
                 ->where('status', MeetingStatus::Reserved->value)
                 ->where('scheduled_at', $scheduledAt)
                 ->whereIn('coach_id', $lockedCandidates->pluck('id'))
+                ->lockForUpdate()
                 ->pluck('coach_id');
             $available = $lockedCandidates->reject(fn (User $c) => $bookedCoachIds->contains($c->id))->values();
             if ($available->isEmpty()) {
