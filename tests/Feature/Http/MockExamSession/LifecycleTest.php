@@ -166,7 +166,8 @@ class LifecycleTest extends TestCase
 
         $this->actingAs($student)
             ->post(route('mock-exam-sessions.submit', $session))
-            ->assertRedirect();
+            ->assertRedirect(route('mock-exam-sessions.show', $session))
+            ->assertSessionHas('success', '答案を提出しました。採点結果を確認してください。');
 
         $session->refresh();
         $this->assertSame(MockExamSessionStatus::Graded, $session->status);
