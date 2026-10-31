@@ -98,6 +98,47 @@ class GradeActionTest extends TestCase
         $this->assertTrue($session->pass);
     }
 
+    public function test_four_of_five_correct_is_80_percent_and_passes_60_percent_threshold(): void
+    {
+        $mockExam = MockExam::factory()->published()->passingScore(60)->create();
+        $questions = collect();
+        for ($i = 0; $i < 5; $i++) {
+            $questions->push(MockExamQuestion::factory()->forMockExam($mockExam)->withOptions(4, 0)->create(['order' => $i]));
+        }
+
+        $session = MockExamSession::factory()
+            ->forMockExam($mockExam)
+            ->inProgress()
+            ->create([
+                'generated_question_ids' => $questions->pluck('id')->all(),
+                'total_questions' => 5,
+                'passing_score_snapshot' => 60,
+            ]);
+
+        // 5 問中 4 問正解(80%)。1 問目のみ不正解
+        foreach ($questions as $index => $question) {
+            $option = $index === 0
+                ? $question->options->firstWhere('is_correct', false)
+                : $question->options->firstWhere('is_correct', true);
+
+            MockExamAnswer::factory()->create([
+                'mock_exam_session_id' => $session->id,
+                'mock_exam_question_id' => $question->id,
+                'selected_option_id' => $option->id,
+                'selected_option_body' => $option->body,
+                'is_correct' => false,
+                'answered_at' => now(),
+            ]);
+        }
+
+        (app(GradeAction::class))($session);
+
+        $session->refresh();
+        $this->assertSame(4, $session->total_correct);
+        $this->assertEquals(80.00, (float) $session->score_percentage);
+        $this->assertTrue($session->pass);
+    }
+
     public function test_grades_session_below_passing_score_as_fail(): void
     {
         $mockExam = MockExam::factory()->published()->passingScore(70)->create();
