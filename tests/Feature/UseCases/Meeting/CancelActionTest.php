@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\UseCases\Meeting;
 
+use App\Enums\MeetingQuotaTransactionType;
 use App\Enums\MeetingStatus;
 use App\Exceptions\Mentoring\MeetingAlreadyStartedException;
 use App\Exceptions\Mentoring\MeetingStatusTransitionException;
@@ -24,7 +25,7 @@ class CancelActionTest extends TestCase
     {
         // Arrange
         $meeting = Meeting::factory()->reserved()->inFuture()->create();
-        $actor = User::factory()->student()->create();
+        $actor = $meeting->student;
 
         // Act
         $canceled = app(CancelAction::class)($meeting, $actor);
@@ -34,6 +35,23 @@ class CancelActionTest extends TestCase
         $this->assertSame($actor->id, $canceled->canceled_by_user_id);
         $this->assertNotNull($canceled->canceled_at);
         $this->assertDatabaseHas('meetings', ['id' => $meeting->id, 'status' => MeetingStatus::Canceled->value]);
+    }
+
+    public function test_cancel_refunds_one_quota_to_student(): void
+    {
+        // Arrange
+        $meeting = Meeting::factory()->reserved()->inFuture()->create();
+
+        // Act
+        app(CancelAction::class)($meeting, $meeting->student);
+
+        // Assert
+        $this->assertDatabaseHas('meeting_quota_transactions', [
+            'user_id' => $meeting->student_id,
+            'type' => MeetingQuotaTransactionType::Refunded->value,
+            'amount' => 1,
+            'related_meeting_id' => $meeting->id,
+        ]);
     }
 
     public function test_non_reserved_meeting_cannot_be_canceled(): void
