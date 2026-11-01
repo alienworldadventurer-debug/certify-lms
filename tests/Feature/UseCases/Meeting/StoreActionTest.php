@@ -17,6 +17,7 @@ use App\Models\User;
 use App\UseCases\Meeting\StoreAction;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -77,6 +78,31 @@ class StoreActionTest extends TestCase
         );
     }
 
+    /**
+     * @return list<string>
+     */
+    private function notificationTypesFor(User $user): array
+    {
+        return DB::table('notifications')
+            ->where('notifiable_id', $user->id)
+            ->get()
+            ->map(fn ($row) => json_decode($row->data, true)['notification_type'])
+            ->all();
+    }
+
+    public function test_reservation_notifies_coach_after_commit(): void
+    {
+        // Arrange
+        [$student, $coach, $enrollment] = $this->setUpBookableEnrollment();
+
+        // Act
+        app(StoreAction::class)($enrollment, $this->nextMondayAt10(), '相談したい');
+
+        // Assert
+        $this->assertSame(['meeting_reserved'], $this->notificationTypesFor($coach));
+        $this->assertSame([], $this->notificationTypesFor($student));
+    }
+
     public function test_throws_when_student_has_no_remaining_quota(): void
     {
         // Arrange
@@ -127,5 +153,6 @@ class StoreActionTest extends TestCase
         // Assert
         $this->assertSame(0, Meeting::query()->where('student_id', $student->id)->count());
         $this->assertSame(0, MeetingQuotaTransaction::query()->where('user_id', $student->id)->count());
+        $this->assertSame([], $this->notificationTypesFor($student));
     }
 }

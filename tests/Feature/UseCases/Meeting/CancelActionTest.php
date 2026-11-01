@@ -12,6 +12,7 @@ use App\Models\Meeting;
 use App\Models\User;
 use App\UseCases\Meeting\CancelAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -52,6 +53,25 @@ class CancelActionTest extends TestCase
             'amount' => 1,
             'related_meeting_id' => $meeting->id,
         ]);
+    }
+
+    public function test_cancel_notifies_coach_after_commit(): void
+    {
+        // Arrange
+        $meeting = Meeting::factory()->reserved()->inFuture()->create();
+        $student = $meeting->student;
+        $coach = $meeting->coach;
+
+        // Act
+        app(CancelAction::class)($meeting, $student);
+
+        // Assert
+        $coachTypes = DB::table('notifications')
+            ->where('notifiable_id', $coach->id)
+            ->get()
+            ->map(fn ($row) => json_decode($row->data, true)['notification_type'])
+            ->all();
+        $this->assertSame(['meeting_canceled'], $coachTypes);
     }
 
     public function test_non_reserved_meeting_cannot_be_canceled(): void
