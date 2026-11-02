@@ -30,8 +30,10 @@ class LearningProgressServiceTest extends TestCase
         $this->assertSame(0, $summary->sectionsCompleted);
         $this->assertSame(0.0, $summary->sectionCompletionRatio);
         $this->assertSame(0, $summary->chaptersTotal);
+        $this->assertSame(0, $summary->chaptersCompleted);
         $this->assertSame(0.0, $summary->chapterCompletionRatio);
         $this->assertSame(0, $summary->partsTotal);
+        $this->assertSame(0, $summary->partsCompleted);
         $this->assertSame(0.0, $summary->partCompletionRatio);
         $this->assertSame(0.0, $summary->overallCompletionRatio);
     }
@@ -114,5 +116,30 @@ class LearningProgressServiceTest extends TestCase
 
         $this->assertEqualsWithDelta(0.5, $result[$withProgress->id], 0.0001);
         $this->assertSame(0.0, $result[$withoutSections->id]);
+    }
+
+    public function test_batch_section_ratios_calculates_independently_for_multiple_enrollments_in_same_certification(): void
+    {
+        $certification = Certification::factory()->published()->create();
+        $part = Part::factory()->published()->forCertification($certification)->create();
+        $chapter = Chapter::factory()->published()->forPart($part)->create();
+        $s1 = Section::factory()->published()->forChapter($chapter)->create();
+        $s2 = Section::factory()->published()->forChapter($chapter)->create();
+
+        $enrollmentA = Enrollment::factory()->for(User::factory()->student()->inProgress()->create())->for($certification)->learning()->create();
+        $enrollmentB = Enrollment::factory()->for(User::factory()->student()->inProgress()->create())->for($certification)->learning()->create();
+        $enrollmentC = Enrollment::factory()->for(User::factory()->student()->inProgress()->create())->for($certification)->learning()->create();
+
+        // enrollmentA: 1/2 (0.5), enrollmentB: 2/2 (1.0), enrollmentC: 0/2 (0.0)
+        SectionProgress::factory()->forEnrollment($enrollmentA)->forSection($s1)->completedNow()->create();
+
+        SectionProgress::factory()->forEnrollment($enrollmentB)->forSection($s1)->completedNow()->create();
+        SectionProgress::factory()->forEnrollment($enrollmentB)->forSection($s2)->completedNow()->create();
+
+        $result = app(LearningProgressService::class)->batchSectionRatios(collect([$enrollmentA, $enrollmentB, $enrollmentC]));
+
+        $this->assertEqualsWithDelta(0.5, $result[$enrollmentA->id], 0.0001);
+        $this->assertEqualsWithDelta(1.0, $result[$enrollmentB->id], 0.0001);
+        $this->assertSame(0.0, $result[$enrollmentC->id]);
     }
 }
