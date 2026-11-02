@@ -92,6 +92,77 @@ class LearningProgressServiceTest extends TestCase
         $this->assertSame(0.0, $summary->overallCompletionRatio);
     }
 
+    public function test_summarize_excludes_draft_parts_and_chapters_and_their_children(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $enrollment = Enrollment::factory()->for($student)->for($certification)->learning()->create();
+
+        // 公開 Part 配下に公開 Chapter と 下書き Chapter
+        $publishedPart = Part::factory()->published()->forCertification($certification)->create();
+        $publishedChapter = Chapter::factory()->published()->forPart($publishedPart)->create();
+        $s1 = Section::factory()->published()->forChapter($publishedChapter)->create();
+
+        $draftChapter = Chapter::factory()->draft()->forPart($publishedPart)->create();
+        $sInDraftChapter = Section::factory()->published()->forChapter($draftChapter)->create();
+
+        // 下書き Part 配下に公開 Chapter と公開 Section
+        $draftPart = Part::factory()->draft()->forCertification($certification)->create();
+        $chapterInDraftPart = Chapter::factory()->published()->forPart($draftPart)->create();
+        $sInDraftPart = Section::factory()->published()->forChapter($chapterInDraftPart)->create();
+
+        // 全ての Section を読了
+        SectionProgress::factory()->forEnrollment($enrollment)->forSection($s1)->completedNow()->create();
+        SectionProgress::factory()->forEnrollment($enrollment)->forSection($sInDraftChapter)->completedNow()->create();
+        SectionProgress::factory()->forEnrollment($enrollment)->forSection($sInDraftPart)->completedNow()->create();
+
+        $summary = app(LearningProgressService::class)->summarize($enrollment);
+
+        // 公開 Part・公開 Chapter 配下の $s1 のみが集計対象
+        $this->assertSame(1, $summary->sectionsTotal);
+        $this->assertSame(1, $summary->sectionsCompleted);
+        $this->assertEqualsWithDelta(1.0, $summary->sectionCompletionRatio, 0.0001);
+        $this->assertSame(1, $summary->chaptersTotal);
+        $this->assertSame(1, $summary->chaptersCompleted);
+        $this->assertEqualsWithDelta(1.0, $summary->chapterCompletionRatio, 0.0001);
+        $this->assertSame(1, $summary->partsTotal);
+        $this->assertSame(1, $summary->partsCompleted);
+        $this->assertEqualsWithDelta(1.0, $summary->partCompletionRatio, 0.0001);
+        $this->assertEqualsWithDelta(1.0, $summary->overallCompletionRatio, 0.0001);
+    }
+
+    public function test_summarize_does_not_mark_empty_chapters_or_parts_as_completed(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certification = Certification::factory()->published()->create();
+        $enrollment = Enrollment::factory()->for($student)->for($certification)->learning()->create();
+
+        // Section を持たない空の Part
+        Part::factory()->published()->forCertification($certification)->create();
+
+        // Section を持たない空の Chapter を持つ Part
+        $partWithEmptyChapter = Part::factory()->published()->forCertification($certification)->create();
+        Chapter::factory()->published()->forPart($partWithEmptyChapter)->create();
+
+        // 通常の Section を持つ Part と Chapter
+        $normalPart = Part::factory()->published()->forCertification($certification)->create();
+        $normalChapter = Chapter::factory()->published()->forPart($normalPart)->create();
+        Section::factory()->published()->forChapter($normalChapter)->create();
+
+        $summary = app(LearningProgressService::class)->summarize($enrollment);
+
+        $this->assertSame(1, $summary->sectionsTotal);
+        $this->assertSame(0, $summary->sectionsCompleted);
+        $this->assertSame(0.0, $summary->sectionCompletionRatio);
+        $this->assertSame(2, $summary->chaptersTotal);
+        $this->assertSame(0, $summary->chaptersCompleted);
+        $this->assertSame(0.0, $summary->chapterCompletionRatio);
+        $this->assertSame(3, $summary->partsTotal);
+        $this->assertSame(0, $summary->partsCompleted);
+        $this->assertSame(0.0, $summary->partCompletionRatio);
+        $this->assertSame(0.0, $summary->overallCompletionRatio);
+    }
+
     public function test_batch_section_ratios_returns_empty_array_for_no_enrollments(): void
     {
         $result = app(LearningProgressService::class)->batchSectionRatios(collect());
