@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -119,7 +120,11 @@ final class SendMeetingReminderAction
                 }
 
                 $notification = $this->buildNotification($meeting, $recipient, $window);
-                Notification::sendNow($recipient, $notification, ['database', 'mail']);
+                $notification->id = (string) Str::uuid();
+
+                // DB 通知は重複判定の根拠になるため同期保存し、メールのみキューへ送る
+                Notification::sendNow($recipient, $notification, ['database']);
+                Notification::send($recipient, $notification->withChannels(['mail']));
 
                 return 'delivered';
             });

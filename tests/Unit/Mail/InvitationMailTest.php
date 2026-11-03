@@ -99,4 +99,18 @@ class InvitationMailTest extends TestCase
             '招待メールは ShouldQueue 実装で非同期キュー送信されるはず (送信遅延がユーザー体感に影響しないように)',
         );
     }
+
+    public function test_mailable_is_queued_after_commit_with_retry_policy(): void
+    {
+        // Arrange
+        $invitation = Invitation::factory()->pending()->create();
+
+        // Act
+        $mailable = new InvitationMail($invitation);
+
+        // Assert
+        $this->assertTrue($mailable->afterCommit, 'DB コミット後にのみキュー投入されるはず');
+        $this->assertSame(4, $mailable->tries);
+        $this->assertSame([60, 300, 900], $mailable->backoff, '再試行間隔は 1分・5分・15分のはず');
+    }
 }

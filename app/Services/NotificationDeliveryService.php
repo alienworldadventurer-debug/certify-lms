@@ -15,10 +15,8 @@ use App\Models\QaThread;
 use App\Models\User;
 use App\Notifications\BusinessEventNotification;
 use Illuminate\Notifications\DatabaseNotification;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
-use Throwable;
 
 final class NotificationDeliveryService
 {
@@ -258,17 +256,6 @@ final class NotificationDeliveryService
 
         $notification = new BusinessEventNotification($data);
         $notification->id = (string) Str::uuid();
-        Notification::sendNow($recipient, $notification, ['database']);
-
-        try {
-            Notification::sendNow($recipient, $notification, ['mail']);
-        } catch (Throwable $exception) {
-            Log::error('Business event notification email delivery failed.', [
-                'notification_type' => $type,
-                'recipient_id' => $recipient->id,
-                'notification_id' => $notification->id,
-                'exception' => $exception,
-            ]);
-        }
+        Notification::send($recipient, $notification);
     }
 }

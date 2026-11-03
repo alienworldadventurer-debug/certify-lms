@@ -5,17 +5,28 @@ declare(strict_types=1);
 namespace App\Notifications;
 
 use App\Models\Announcement;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-final class AdminAnnouncementNotification extends Notification
+final class AdminAnnouncementNotification extends Notification implements ShouldQueue
 {
+    use Queueable;
+
     private const PREVIEW_LENGTH = 80;
+
+    public int $tries = 4;
+
+    /** @var array<int, int> */
+    public array $backoff = [60, 300, 900];
 
     public function __construct(
         private readonly Announcement $announcement,
         private readonly string $notificationId,
-    ) {}
+    ) {
+        $this->afterCommit();
+    }
 
     /**
      * @return array<int, string>

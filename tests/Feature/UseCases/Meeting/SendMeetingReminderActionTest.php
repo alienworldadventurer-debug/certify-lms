@@ -280,7 +280,30 @@ class SendMeetingReminderActionTest extends TestCase
         $this->runWindow(MeetingReminderWindow::OneHourBefore);
 
         Notification::assertNotSentTo($admin, MeetingReminderNotification::class);
-        Notification::assertCount(2);
+        // 受信者2名 × (database 同期送信 + mail キュー投入) の2回ずつ
+        Notification::assertCount(4);
+    }
+
+    public function test_database_channel_is_sent_synchronously_and_mail_is_queued(): void
+    {
+        Notification::fake();
+        $this->meetingAt('2026-10-20 12:30:00');
+
+        $this->runWindow(MeetingReminderWindow::OneHourBefore);
+
+        Notification::assertSentTo(
+            $this->student,
+            MeetingReminderNotification::class,
+            fn (MeetingReminderNotification $notification, array $channels): bool => $channels === ['database'],
+        );
+        Notification::assertSentTo(
+            $this->student,
+            MeetingReminderNotification::class,
+            fn (MeetingReminderNotification $notification, array $channels): bool => $channels === ['mail']
+                && $notification->afterCommit === true
+                && $notification->tries === 4
+                && $notification->backoff === [60, 300, 900],
+        );
     }
 
     public function test_eve_notification_has_window_title_and_counterpart_labels_per_recipient(): void

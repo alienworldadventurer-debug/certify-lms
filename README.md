@@ -117,6 +117,22 @@ http://localhost:8000 にアクセスし、下記の[ログインアカウント
 
 > 本サービスは**招待制**です。公開の会員登録画面はありません。新規ユーザーを作るには、管理者でログイン → ユーザー管理から招待 → Mailpit で招待メールの URL を開く → オンボーディング登録、という流れになります。
 
+## キューワーカー（通知・メール送信）
+
+通知とメールは DB キュー（`QUEUE_CONNECTION=database`）経由で非同期に送信します。ワーカーが起動していないと送信されないため、開発時は別ターミナルで起動してください。
+
+```bash
+sail artisan migrate                 # jobs テーブルの作成（初回・マイグレーション更新時）
+sail artisan queue:work --tries=4    # ワーカー起動（失敗時は最大3回リトライ）
+sail artisan queue:failed            # 失敗したジョブの一覧
+sail artisan queue:retry all         # 失敗したジョブをすべて再投入
+sail artisan queue:retry <uuid>      # 個別に再投入（uuid は queue:failed で確認）
+```
+
+- リトライ間隔は通知・招待メールごとに 1 分・5 分・15 分です（各クラスの `$backoff`）。
+- 送信に失敗して上限回数を超えたジョブは `failed_jobs` テーブルに記録されます。原因を解消してから `queue:retry` で再投入してください。
+- 面談リマインダーの DB 通知は重複判定に使うため同期保存され、メールのみキュー経由で送信されます。
+
 ## テスト
 
 ```bash
