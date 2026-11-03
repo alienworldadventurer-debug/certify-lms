@@ -83,6 +83,12 @@ class CrudTest extends TestCase
             ->post(route('admin.chapters.publish', $chapter))
             ->assertForbidden();
 
+        // 下書き化拒否
+        $publishedChapter = Chapter::factory()->forPart($part)->published()->create();
+        $this->actingAs($coach)
+            ->post(route('admin.chapters.unpublish', $publishedChapter))
+            ->assertForbidden();
+
         // 削除拒否
         $this->actingAs($coach)
             ->delete(route('admin.chapters.destroy', $chapter))

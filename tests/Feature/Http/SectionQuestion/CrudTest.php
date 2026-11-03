@@ -280,6 +280,17 @@ class CrudTest extends TestCase
             ->post(route('admin.section-questions.publish', $question))
             ->assertForbidden();
 
+        // 下書き化拒否
+        $publishedQuestion = SectionQuestion::factory()
+            ->forSection($section)
+            ->forCategory($category)
+            ->withOptions(2)
+            ->published()
+            ->create();
+        $this->actingAs($coach)
+            ->post(route('admin.section-questions.unpublish', $publishedQuestion))
+            ->assertForbidden();
+
         // 削除
         $this->actingAs($coach)
             ->delete(route('admin.section-questions.destroy', $question))
