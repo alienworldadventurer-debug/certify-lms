@@ -105,14 +105,12 @@ final class GoogleCalendarService
     public function busyRanges(GoogleCredential $credential, Carbon $start, Carbon $end): array
     {
         try {
-            $service = new Calendar($this->authorizedClient($credential));
-
             $request = new FreeBusyRequest;
             $request->setTimeMin($start->toRfc3339String());
             $request->setTimeMax($end->toRfc3339String());
             $request->setItems([$this->calendarItem()]);
 
-            $response = $service->freebusy->query($request);
+            $response = $this->withAuthRetry($credential, fn (Client $client) => (new Calendar($client))->freebusy->query($request));
             $calendar = $response->getCalendars()[self::CALENDAR_ID] ?? null;
 
             $ranges = [];
@@ -153,8 +151,8 @@ final class GoogleCalendarService
                 'end' => new EventDateTime(['dateTime' => $end->toRfc3339String(), 'timeZone' => self::TIMEZONE]),
             ]);
 
-            $created = (new Calendar($this->authorizedClient($credential)))
-                ->events->insert(self::CALENDAR_ID, $event);
+            $created = $this->withAuthRetry($credential, fn (Client $client) => (new Calendar($client))
+                ->events->insert(self::CALENDAR_ID, $event));
 
             $meeting->forceFill(['google_event_id' => $created->getId()])->save();
         } catch (Throwable $e) {
@@ -177,8 +175,8 @@ final class GoogleCalendarService
         }
 
         try {
-            (new Calendar($this->authorizedClient($credential)))
-                ->events->delete(self::CALENDAR_ID, $meeting->google_event_id);
+            $this->withAuthRetry($credential, fn (Client $client) => (new Calendar($client))
+                ->events->delete(self::CALENDAR_ID, $meeting->google_event_id));
         } catch (GoogleServiceException $e) {
             if (in_array($e->getCode(), [404, 410], true)) {
                 return;
@@ -236,6 +234,34 @@ final class GoogleCalendarService
             ->where('user_id', $coachId)
             ->where('status', GoogleCredentialStatus::Active)
             ->first();
+    }
+
+    /**
+     * API 呼び出しが 401 を返したら、アクセストークンを 1 回だけリフレッシュして同じ呼び出しを再試行する。
+     *
+     * @template T
+     *
+     * @param callable(Client): T $call
+     *
+     * @return T
+     *
+     * @throws GoogleCalendarException
+     * @throws GoogleServiceException
+     */
+    private function withAuthRetry(GoogleCredential $credential, callable $call): mixed
+    {
+        try {
+            return $call($this->authorizedClient($credential));
+        } catch (GoogleServiceException $e) {
+            if ($e->getCode() !== 401) {
+                throw $e;
+            }
+        }
+
+        $client = $this->makeClient();
+        $this->refreshAccessToken($credential, $client);
+
+        return $call($client);
     }
 
     /**

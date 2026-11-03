@@ -6,13 +6,20 @@ namespace App\Services\AiChat;
 
 use App\Exceptions\AiChat\AiChatLlmFailedException;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
+use Throwable;
 
 /**
  * Gemini API（generateContent）を同期で呼び出すクライアント。
+ * 接続失敗・429・5xx の一時的な失敗のみ再試行し、空応答などは再試行しない。
  */
 class GeminiClient
 {
+    private const RETRY_TIMES = 3;
+
+    private const RETRY_SLEEP_MS = 500;
+
     public function isConfigured(): bool
     {
         return filled(config('ai-chat.gemini.api_key'));
@@ -32,6 +39,7 @@ class GeminiClient
 
         try {
             $response = Http::timeout((int) config('ai-chat.gemini.timeout'))
+                ->retry(self::RETRY_TIMES, self::RETRY_SLEEP_MS, $this->isTransientFailure(...), throw: false)
                 ->withHeaders(['x-goog-api-key' => (string) config('ai-chat.gemini.api_key')])
                 ->post($this->endpoint($model), [
                     'systemInstruction' => ['parts' => [['text' => $systemPrompt]]],
@@ -64,6 +72,16 @@ class GeminiClient
             'output_tokens' => $response->json('usageMetadata.candidatesTokenCount'),
             'response_time_ms' => (int) ((hrtime(true) - $startedAt) / 1_000_000),
         ];
+    }
+
+    private function isTransientFailure(Throwable $e): bool
+    {
+        if ($e instanceof ConnectionException) {
+            return true;
+        }
+
+        return $e instanceof RequestException
+            && ($e->response->status() === 429 || $e->response->serverError());
     }
 
     private function endpoint(string $model): string
