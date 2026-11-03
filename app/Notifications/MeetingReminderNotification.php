@@ -6,6 +6,8 @@ namespace App\Notifications;
 
 use App\Enums\MeetingReminderWindow;
 use App\UseCases\Meeting\SendMeetingReminderAction;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -16,8 +18,15 @@ use Illuminate\Notifications\Notification;
  *
  * @see SendMeetingReminderAction
  */
-final class MeetingReminderNotification extends Notification
+final class MeetingReminderNotification extends Notification implements ShouldQueue
 {
+    use Queueable;
+
+    public int $tries = 3;
+
+    /** @var array<int, int> */
+    public array $backoff = [60, 300, 900];
+
     /**
      * @param array{
      *     title: string,
@@ -32,18 +41,35 @@ final class MeetingReminderNotification extends Notification
      *     reminder_window: string,
      *     source_id: string
      * } $data
+     * @param array<int, string> $channels
      */
     public function __construct(
         private readonly array $data,
         private readonly MeetingReminderWindow $window,
-    ) {}
+        private array $channels = ['database', 'mail'],
+    ) {
+        $this->afterCommit();
+    }
+
+    /**
+     * 指定チャネルだけを持つ複製を返す（id は維持する）。
+     *
+     * @param array<int, string> $channels
+     */
+    public function withChannels(array $channels): self
+    {
+        $notification = clone $this;
+        $notification->channels = $channels;
+
+        return $notification;
+    }
 
     /**
      * @return array<int, string>
      */
     public function via($notifiable): array
     {
-        return ['database', 'mail'];
+        return $this->channels;
     }
 
     /**

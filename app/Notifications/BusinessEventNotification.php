@@ -4,11 +4,20 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-final class BusinessEventNotification extends Notification
+final class BusinessEventNotification extends Notification implements ShouldQueue
 {
+    use Queueable;
+
+    public int $tries = 3;
+
+    /** @var array<int, int> */
+    public array $backoff = [60, 300, 900];
+
     /**
      * @param array{
      *     notification_type: string,
@@ -26,7 +35,9 @@ final class BusinessEventNotification extends Notification
      */
     public function __construct(
         private readonly array $data,
-    ) {}
+    ) {
+        $this->afterCommit();
+    }
 
     /**
      * @return array<int, string>
