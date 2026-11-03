@@ -110,7 +110,7 @@ class InvitationMailTest extends TestCase
 
         // Assert
         $this->assertTrue($mailable->afterCommit, 'DB コミット後にのみキュー投入されるはず');
-        $this->assertSame(3, $mailable->tries);
+        $this->assertSame(4, $mailable->tries);
         $this->assertSame([60, 300, 900], $mailable->backoff, '再試行間隔は 1分・5分・15分のはず');
     }
 }

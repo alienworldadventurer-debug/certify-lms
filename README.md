@@ -123,7 +123,7 @@ http://localhost:8000 にアクセスし、下記の[ログインアカウント
 
 ```bash
 sail artisan migrate                 # jobs テーブルの作成（初回・マイグレーション更新時）
-sail artisan queue:work --tries=3    # ワーカー起動（失敗時は最大3回リトライ）
+sail artisan queue:work --tries=4    # ワーカー起動（失敗時は最大3回リトライ）
 sail artisan queue:failed            # 失敗したジョブの一覧
 sail artisan queue:retry all         # 失敗したジョブをすべて再投入
 sail artisan queue:retry <uuid>      # 個別に再投入（uuid は queue:failed で確認）

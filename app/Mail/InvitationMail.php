@@ -17,7 +17,7 @@ class InvitationMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-    public int $tries = 3;
+    public int $tries = 4;
 
     public array $backoff = [60, 300, 900];
 

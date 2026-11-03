@@ -301,7 +301,7 @@ class SendMeetingReminderActionTest extends TestCase
             MeetingReminderNotification::class,
             fn (MeetingReminderNotification $notification, array $channels): bool => $channels === ['mail']
                 && $notification->afterCommit === true
-                && $notification->tries === 3
+                && $notification->tries === 4
                 && $notification->backoff === [60, 300, 900],
         );
     }

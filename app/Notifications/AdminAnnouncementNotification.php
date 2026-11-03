@@ -16,7 +16,7 @@ final class AdminAnnouncementNotification extends Notification implements Should
 
     private const PREVIEW_LENGTH = 80;
 
-    public int $tries = 3;
+    public int $tries = 4;
 
     /** @var array<int, int> */
     public array $backoff = [60, 300, 900];

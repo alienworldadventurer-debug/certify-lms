@@ -13,7 +13,7 @@ final class BusinessEventNotification extends Notification implements ShouldQueu
 {
     use Queueable;
 
-    public int $tries = 3;
+    public int $tries = 4;
 
     /** @var array<int, int> */
     public array $backoff = [60, 300, 900];

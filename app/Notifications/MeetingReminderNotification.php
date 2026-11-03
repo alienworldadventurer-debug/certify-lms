@@ -22,7 +22,7 @@ final class MeetingReminderNotification extends Notification implements ShouldQu
 {
     use Queueable;
 
-    public int $tries = 3;
+    public int $tries = 4;
 
     /** @var array<int, int> */
     public array $backoff = [60, 300, 900];
