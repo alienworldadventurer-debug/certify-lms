@@ -6,12 +6,14 @@ namespace App\Services;
 
 use App\Enums\EnrollmentStatus;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Enrollment 集計を提供する Service。admin ダッシュボード KPI で利用される。
  *
- * 全体 KPI(adminKpi)と資格別修了率(completionRateByCertification)は全 enrollment を走査する重い集計。
+ * 全体 KPI(adminKpi)と資格別修了率(completionRateByCertification)は全 enrollment を走査する重い集計のため、
+ * config('dashboard') の TTL でキャッシュする。受講状態の遷移時の無効化は EnrollmentStatusChangeService が担う。
  *
  * 集計対象は SoftDelete 除外。paused 集計は採用しない(3 値モデル)。
  * 受講生ダッシュボードの Action / Controller テストで Mockery 経由 mock するため `final` は付けない。
@@ -24,6 +26,20 @@ class EnrollmentStatsService
      * @return array{learning_count: int, passed_count: int, failed_count: int, total: int, by_certification: array<int, array{certification_id: string, certification_name: string, learning: int, passed: int, failed: int, total: int}>}
      */
     public function adminKpi(): array
+    {
+        return Cache::remember(
+            config('dashboard.admin_kpi_cache_key'),
+            config('dashboard.admin_cache_ttl_seconds'),
+            fn (): array => $this->computeAdminKpi(),
+        );
+    }
+
+    /**
+     * 全体 KPI を全 enrollment から集計する(キャッシュ非経由)。
+     *
+     * @return array{learning_count: int, passed_count: int, failed_count: int, total: int, by_certification: array<int, array{certification_id: string, certification_name: string, learning: int, passed: int, failed: int, total: int}>}
+     */
+    private function computeAdminKpi(): array
     {
         $counts = DB::table('enrollments')
             ->whereNull('deleted_at')
@@ -76,6 +92,20 @@ class EnrollmentStatsService
      * @return Collection<int, array{certification_id: string, certification_name: string, learning: int, passed: int, failed: int, total: int, completion_rate: float}>
      */
     public function completionRateByCertification(): Collection
+    {
+        return Cache::remember(
+            config('dashboard.admin_completion_rate_cache_key'),
+            config('dashboard.admin_cache_ttl_seconds'),
+            fn (): Collection => $this->computeCompletionRateByCertification(),
+        );
+    }
+
+    /**
+     * 資格別修了率を全 enrollment から集計する(キャッシュ非経由)。
+     *
+     * @return Collection<int, array{certification_id: string, certification_name: string, learning: int, passed: int, failed: int, total: int, completion_rate: float}>
+     */
+    private function computeCompletionRateByCertification(): Collection
     {
         return collect($this->byCertification())
             ->filter(fn (array $row): bool => $row['total'] > 0)
