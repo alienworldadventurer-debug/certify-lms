@@ -9,11 +9,13 @@ use App\Services\AiChat\GeminiClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
 /**
  * GeminiClient の応答解析と失敗時の例外変換を検証する。外部通信は Http::fake で置き換える。
  */
+#[Group('external')]
 class GeminiClientTest extends TestCase
 {
     use RefreshDatabase;
@@ -91,6 +93,66 @@ class GeminiClientTest extends TestCase
         } catch (AiChatLlmFailedException $e) {
             $this->assertSame(503, $e->upstreamStatus);
         }
+    }
+
+    public function test_retries_transient_http_error_and_returns_success(): void
+    {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::sequence()
+            ->push([], 503)
+            ->push([], 429)
+            ->push(['candidates' => [['content' => ['parts' => [['text' => '再試行成功']]]]]]),
+        ]);
+
+        $result = app(GeminiClient::class)->generate('system', [['role' => 'user', 'text' => '質問']]);
+
+        $this->assertSame('再試行成功', $result['text']);
+        Http::assertSentCount(3);
+    }
+
+    public function test_does_not_retry_client_error(): void
+    {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([], 400)]);
+
+        try {
+            app(GeminiClient::class)->generate('system', [['role' => 'user', 'text' => '質問']]);
+            $this->fail('AiChatLlmFailedException が投げられませんでした。');
+        } catch (AiChatLlmFailedException $e) {
+            $this->assertSame(400, $e->upstreamStatus);
+        }
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_gives_up_after_retry_limit_on_persistent_server_error(): void
+    {
+        Http::fake(['generativelanguage.googleapis.com/*' => Http::response([], 500)]);
+
+        $this->expectException(AiChatLlmFailedException::class);
+
+        try {
+            app(GeminiClient::class)->generate('system', [['role' => 'user', 'text' => '質問']]);
+        } finally {
+            Http::assertSentCount(3);
+        }
+    }
+
+    public function test_retries_connection_failure_and_returns_success(): void
+    {
+        $calls = 0;
+        Http::fake(function () use (&$calls) {
+            $calls++;
+
+            if ($calls === 1) {
+                throw new ConnectionException('timeout');
+            }
+
+            return Http::response(['candidates' => [['content' => ['parts' => [['text' => '復旧']]]]]]);
+        });
+
+        $result = app(GeminiClient::class)->generate('system', [['role' => 'user', 'text' => '質問']]);
+
+        $this->assertSame('復旧', $result['text']);
+        $this->assertSame(2, $calls);
     }
 
     public function test_throws_when_response_text_is_empty(): void

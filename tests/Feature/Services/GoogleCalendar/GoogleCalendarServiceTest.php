@@ -14,9 +14,11 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Http\Message\RequestInterface;
 use Tests\TestCase;
 
+#[Group('external')]
 class GoogleCalendarServiceTest extends TestCase
 {
     use RefreshDatabase;
@@ -80,7 +82,10 @@ class GoogleCalendarServiceTest extends TestCase
     {
         $coach = User::factory()->coach()->create();
         $credential = GoogleCredential::factory()->forCoach($coach)->create();
-        $service = $this->serviceWith([$this->googleErrorResponse(401, 'Invalid Credentials')]);
+        $service = $this->serviceWith([
+            $this->googleErrorResponse(401, 'Invalid Credentials'),
+            $this->jsonResponse(400, ['error' => 'invalid_grant']),
+        ]);
 
         $ranges = $service->busyRanges($credential, now(), now()->addDay());
 
@@ -145,7 +150,10 @@ class GoogleCalendarServiceTest extends TestCase
         $coach = User::factory()->coach()->create();
         $credential = GoogleCredential::factory()->forCoach($coach)->create();
         $meeting = $this->meetingFor($coach);
-        $service = $this->serviceWith([$this->googleErrorResponse(401, 'Invalid Credentials')]);
+        $service = $this->serviceWith([
+            $this->googleErrorResponse(401, 'Invalid Credentials'),
+            $this->jsonResponse(400, ['error' => 'invalid_grant']),
+        ]);
 
         $service->createMeetingEvent($meeting);
 
@@ -207,11 +215,31 @@ class GoogleCalendarServiceTest extends TestCase
         $coach = User::factory()->coach()->create();
         $credential = GoogleCredential::factory()->forCoach($coach)->create();
         $meeting = $this->meetingFor($coach, ['google_event_id' => 'event-123']);
-        $service = $this->serviceWith([$this->googleErrorResponse(401, 'Invalid Credentials')]);
+        $service = $this->serviceWith([
+            $this->googleErrorResponse(401, 'Invalid Credentials'),
+            $this->jsonResponse(400, ['error' => 'invalid_grant']),
+        ]);
 
         $service->deleteMeetingEvent($meeting);
 
         $this->assertDatabaseMissing('google_credentials', ['id' => $credential->id]);
+    }
+
+    public function test_delete_meeting_event_401_refreshes_token_and_retries_once(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $credential = GoogleCredential::factory()->forCoach($coach)->create();
+        $meeting = $this->meetingFor($coach, ['google_event_id' => 'event-123']);
+        $service = $this->serviceWith([
+            $this->googleErrorResponse(401, 'Invalid Credentials'),
+            $this->jsonResponse(200, ['access_token' => 'new-token', 'expires_in' => 3600]),
+            $this->jsonResponse(204, []),
+        ]);
+
+        $service->deleteMeetingEvent($meeting);
+
+        $this->assertCount(3, $this->history);
+        $this->assertDatabaseHas('google_credentials', ['id' => $credential->id]);
     }
 
     public function test_delete_meeting_event_skips_google_when_no_event_id(): void

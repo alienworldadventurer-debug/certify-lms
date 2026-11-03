@@ -12,8 +12,10 @@ use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
+#[Group('external')]
 class StripeWebhookTest extends TestCase
 {
     use RefreshDatabase;
@@ -30,7 +32,7 @@ class StripeWebhookTest extends TestCase
     /**
      * @param array<string, mixed> $object
      */
-    private function postEvent(string $type, array $object, ?string $signature = null): TestResponse
+    private function postEvent(string $type, array $object, ?string $signature = null, ?int $timestamp = null, string $secret = self::SECRET): TestResponse
     {
         $payload = json_encode([
             'id' => 'evt_test_'.uniqid(),
@@ -39,8 +41,8 @@ class StripeWebhookTest extends TestCase
             'data' => ['object' => $object],
         ]);
 
-        $timestamp = time();
-        $header = $signature ?? sprintf('t=%d,v1=%s', $timestamp, hash_hmac('sha256', $timestamp.'.'.$payload, self::SECRET));
+        $timestamp ??= time();
+        $header = $signature ?? sprintf('t=%d,v1=%s', $timestamp, hash_hmac('sha256', $timestamp.'.'.$payload, $secret));
 
         return $this->call('POST', route('webhooks.stripe'), [], [], [], [
             'CONTENT_TYPE' => 'application/json',
@@ -92,6 +94,35 @@ class StripeWebhookTest extends TestCase
         $response = $this->call('POST', route('webhooks.stripe'), [], [], [], ['CONTENT_TYPE' => 'application/json'], '{}');
 
         $response->assertStatus(400);
+    }
+
+    public function test_signature_signed_with_other_secret_returns_400_and_changes_nothing(): void
+    {
+        $payment = $this->pendingPayment();
+
+        $response = $this->postEvent('checkout.session.completed', $this->completedSession(), null, null, 'whsec_other');
+
+        $response->assertStatus(400);
+        $this->assertSame(PaymentStatus::Pending, $payment->fresh()->status);
+    }
+
+    public function test_signature_older_than_tolerance_returns_400(): void
+    {
+        $payment = $this->pendingPayment();
+
+        $response = $this->postEvent('checkout.session.completed', $this->completedSession(), null, time() - 600);
+
+        $response->assertStatus(400);
+        $this->assertSame(PaymentStatus::Pending, $payment->fresh()->status);
+    }
+
+    public function test_valid_signature_within_tolerance_is_accepted(): void
+    {
+        $payment = $this->pendingPayment();
+
+        $this->postEvent('checkout.session.completed', $this->completedSession(), null, time() - 60)->assertOk();
+
+        $this->assertSame(PaymentStatus::Succeeded, $payment->fresh()->status);
     }
 
     public function test_completed_session_marks_payment_succeeded_and_grants_purchased_quota(): void
