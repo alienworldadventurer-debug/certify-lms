@@ -18,6 +18,7 @@ use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Http\Message\RequestInterface;
+use RuntimeException;
 use Tests\TestCase;
 
 #[Group('external')]
@@ -371,5 +372,19 @@ class GoogleCalendarServiceTest extends TestCase
         $service->deleteMeetingEvent($meeting);
 
         $this->assertDatabaseHas('google_credentials', ['id' => $credential->id]);
+    }
+
+    public function test_unmocked_google_client_throws_runtime_exception_in_test_environment(): void
+    {
+        $service = new GoogleCalendarService(null);
+        $coach = User::factory()->coach()->create();
+
+        try {
+            $service->connect($coach, 'code-without-mock');
+            $this->fail('GoogleCalendarException がスローされませんでした。');
+        } catch (GoogleCalendarException $e) {
+            $this->assertInstanceOf(RuntimeException::class, $e->getPrevious());
+            $this->assertStringContainsString('Unmocked Google API request', $e->getPrevious()->getMessage());
+        }
     }
 }

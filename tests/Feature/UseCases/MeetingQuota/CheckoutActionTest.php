@@ -13,11 +13,13 @@ use App\UseCases\MeetingQuota\CheckoutAction;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Group;
 use Stripe\ApiRequestor;
 use Stripe\StripeClient;
 use Tests\Support\FakeStripeHttpClient;
 use Tests\TestCase;
 
+#[Group('external')]
 class CheckoutActionTest extends TestCase
 {
     use RefreshDatabase;

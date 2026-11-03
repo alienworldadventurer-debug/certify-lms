@@ -10,11 +10,13 @@ use App\Models\Payment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Group;
 use Stripe\ApiRequestor;
 use Stripe\StripeClient;
 use Tests\Support\FakeStripeHttpClient;
 use Tests\TestCase;
 
+#[Group('external')]
 class CheckoutTest extends TestCase
 {
     use RefreshDatabase;

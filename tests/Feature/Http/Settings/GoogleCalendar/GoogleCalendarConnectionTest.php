@@ -7,8 +7,10 @@ namespace Tests\Feature\Http\Settings\GoogleCalendar;
 use App\Models\GoogleCredential;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
+#[Group('external')]
 class GoogleCalendarConnectionTest extends TestCase
 {
     use RefreshDatabase;

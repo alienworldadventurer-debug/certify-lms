@@ -18,7 +18,10 @@ use Google\Service\Calendar\FreeBusyRequest;
 use Google\Service\Calendar\FreeBusyRequestItem;
 use Google\Service\Exception as GoogleServiceException;
 use GuzzleHttp\Client as GuzzleClient;
+use GuzzleHttp\HandlerStack;
 use Illuminate\Support\Facades\Log;
+use Psr\Http\Message\RequestInterface;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -336,10 +339,18 @@ final class GoogleCalendarService
         $client->setScopes(self::SCOPES);
         $client->setAccessType('offline');
         $client->setPrompt('consent');
+
+        $handler = $this->httpHandler;
+        if ($handler === null && app()->runningUnitTests()) {
+            $handler = new HandlerStack(function (RequestInterface $request) {
+                throw new RuntimeException("Unmocked Google API request: {$request->getMethod()} {$request->getUri()}");
+            });
+        }
+
         $client->setHttpClient(new GuzzleClient([
             'timeout' => self::TIMEOUT_SECONDS,
             'connect_timeout' => self::TIMEOUT_SECONDS,
-            'handler' => $this->httpHandler,
+            'handler' => $handler,
         ]));
 
         return $client;
