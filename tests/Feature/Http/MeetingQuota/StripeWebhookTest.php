@@ -13,6 +13,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\Group;
+use Tests\Support\StripeSignatureHelper;
 use Tests\TestCase;
 
 #[Group('external')]
@@ -42,7 +43,7 @@ class StripeWebhookTest extends TestCase
         ]);
 
         $timestamp ??= time();
-        $header = $signature ?? sprintf('t=%d,v1=%s', $timestamp, hash_hmac('sha256', $timestamp.'.'.$payload, $secret));
+        $header = $signature ?? StripeSignatureHelper::generate($payload, $secret, $timestamp);
 
         return $this->call('POST', route('webhooks.stripe'), [], [], [], [
             'CONTENT_TYPE' => 'application/json',
