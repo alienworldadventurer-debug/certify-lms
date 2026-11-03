@@ -167,6 +167,7 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` — コーチの Google カレンダー連携に使用します。Google Cloud Console で OAuth クライアント（ウェブアプリケーション）を作成し、承認済みのリダイレクト URI に `GOOGLE_REDIRECT_URI` の値を登録してください。未設定の場合、連携操作は失敗します（面談予約自体は影響を受けません）。なお、連携で保存するアクセストークン・リフレッシュトークンは現状暗号化していません。本番運用ではトークンの暗号化を推奨します
 - `STRIPE_SECRET` / `STRIPE_WEBHOOK_SECRET` — 追加面談パックの Stripe Checkout 決済および Webhook 署名検証に使用します。Stripe ダッシュボードで取得したテスト用 API キー（`sk_test_...`）と Webhook 署名シークレット（`whsec_...`）を設定してください。未設定の場合、購入開始時に「決済画面の作成に失敗しました。」と表示され決済画面へ進めません
 - `PUSHER_*` — チャットのリアルタイム配信に使用します。有効にする場合は Pusher のキーを取得して設定し、`BROADCAST_DRIVER=pusher` に変更してください。未設定（既定の `BROADCAST_DRIVER=log`）でもメッセージの送受信自体は動作し、相手画面へのリアルタイム反映のみ行われません
+- `DASHBOARD_ADMIN_CACHE_TTL` — 管理者ダッシュボードの集計（全体 KPI・認定ごとの修了率）をキャッシュする有効期間を秒数で指定します。既定値は `300`（5分）です。値を変更した後は `sail artisan config:clear` を実行してください。受講状態が変わると該当キャッシュは即時に破棄されるため、この値は再計算までの最大待ち時間の目安です
 
 ### Stripe Webhook（追加面談購入）の動作確認手順
 
