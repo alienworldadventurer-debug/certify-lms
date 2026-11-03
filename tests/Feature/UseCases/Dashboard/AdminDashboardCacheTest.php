@@ -100,6 +100,43 @@ class AdminDashboardCacheTest extends TestCase
         );
     }
 
+    public function test_admin_kpi_is_recalculated_after_ttl_expires(): void
+    {
+        // Arrange: admin + 受講中 2 件を集計してキャッシュさせる
+        $admin = User::factory()->admin()->inProgress()->create();
+        $cert = Certification::factory()->published()->create();
+        Enrollment::factory()->for($cert)->learning()->count(2)->create();
+        Cache::flush();
+        app(FetchAdminDashboardAction::class)($admin);
+        Enrollment::factory()->for($cert)->learning()->count(3)->create();
+
+        // Act: TTL 経過後に再表示する(無効化イベントは無い)
+        $this->travel(config('dashboard.admin_cache_ttl_seconds') + 1)->seconds();
+        $after = app(FetchAdminDashboardAction::class)($admin);
+
+        // Assert: 失効後は集計が再実行され、直接 INSERT された分も反映される
+        $this->assertSame(5, $after->kpi['learning_count'], 'TTL 失効後は集計を再実行して最新値を返すはず');
+    }
+
+    public function test_completion_rate_is_recalculated_after_ttl_expires(): void
+    {
+        // Arrange: admin + 受講中 2 件(修了率 0.0)を集計してキャッシュさせる
+        $admin = User::factory()->admin()->inProgress()->create();
+        $cert = Certification::factory()->published()->create();
+        Enrollment::factory()->for($cert)->learning()->count(2)->create();
+        Cache::flush();
+        app(FetchAdminDashboardAction::class)($admin);
+        Enrollment::factory()->for($cert)->passed()->create();
+
+        // Act: TTL 経過後に再表示する(無効化イベントは無い)
+        $this->travel(config('dashboard.admin_cache_ttl_seconds') + 1)->seconds();
+        $after = app(FetchAdminDashboardAction::class)($admin);
+
+        // Assert: 失効後は修了率を再集計し、直接登録された合格者(1 / 全 3)が反映されるはず
+        $afterRate = $after->completionRateByCertification->firstWhere('certification_id', $cert->id)['completion_rate'];
+        $this->assertSame(0.3333, $afterRate, 'TTL 失効後は修了率を再集計して最新値を返すはず');
+    }
+
     public function test_admin_kpi_cache_is_invalidated_on_enrollment_status_change(): void
     {
         // Arrange: admin + 受講中 2 件を 1 度集計してキャッシュさせる
