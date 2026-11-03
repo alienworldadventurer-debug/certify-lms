@@ -10,12 +10,9 @@ use App\Models\Certification;
 use App\Models\Enrollment;
 use App\Models\User;
 use App\Notifications\AdminAnnouncementNotification;
-use Illuminate\Contracts\Mail\Factory as MailFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
-use Mockery\MockInterface;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -104,9 +101,9 @@ class AnnouncementControllerTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         $student = User::factory()->student()->inProgress()->create();
-        Notification::shouldReceive('sendNow')
+        Notification::shouldReceive('send')
             ->once()
-            ->andThrow(new RuntimeException('db down'));
+            ->andThrow(new RuntimeException('queue down'));
 
         $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload())
             ->assertRedirect(route('admin.announcements.create'))
@@ -117,34 +114,24 @@ class AnnouncementControllerTest extends TestCase
         $this->assertSame(0, $student->notifications()->count());
     }
 
-    public function test_mail_failure_keeps_notifications_and_continues_other_mails(): void
+    public function test_recipients_are_notified_after_commit_and_dispatched_count_is_recorded(): void
     {
         $admin = User::factory()->admin()->create();
         $first = User::factory()->student()->inProgress()->create();
         $second = User::factory()->student()->inProgress()->create();
-        $attempts = 0;
-        $this->mock(MailFactory::class, function (MockInterface $mock) use (&$attempts): void {
-            $mock->shouldReceive('mailer->send')->andReturnUsing(function () use (&$attempts): void {
-                $attempts++;
-
-                if ($attempts === 1) {
-                    throw new RuntimeException('smtp down');
-                }
-            });
-        });
-        Log::spy();
+        Notification::fake();
 
         $this->actingAs($admin)->post(route('admin.announcements.store'), $this->payload())
             ->assertRedirect(route('admin.announcements.index'))
             ->assertSessionHas('success', 'お知らせを配信しました。');
 
-        $this->assertSame(2, $attempts);
-        $this->assertSame(1, $first->notifications()->count());
-        $this->assertSame(1, $second->notifications()->count());
         $this->assertSame(2, Announcement::query()->sole()->dispatched_count);
-        Log::shouldHaveReceived('error')
-            ->once()
-            ->with('Admin announcement email delivery failed.', \Mockery::type('array'));
+        Notification::assertSentTo($first, AdminAnnouncementNotification::class, function (AdminAnnouncementNotification $notification, array $channels): bool {
+            return $channels === ['database', 'mail']
+                && $notification->afterCommit === true
+                && $notification->tries === 3;
+        });
+        Notification::assertSentTo($second, AdminAnnouncementNotification::class);
     }
 
     public function test_store_validates_required_fields_with_exact_messages(): void

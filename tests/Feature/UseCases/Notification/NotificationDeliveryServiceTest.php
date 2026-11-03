@@ -17,11 +17,8 @@ use App\Models\User;
 use App\Notifications\BusinessEventNotification;
 use App\Services\NotificationDeliveryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
-use RuntimeException;
 use Tests\TestCase;
 
 class NotificationDeliveryServiceTest extends TestCase
@@ -123,7 +120,7 @@ class NotificationDeliveryServiceTest extends TestCase
         Notification::assertNotSentTo($coach, BusinessEventNotification::class);
     }
 
-    public function test_mail_failures_are_logged_and_do_not_interrupt_database_notifications_for_other_recipients(): void
+    public function test_chat_notifications_are_queued_to_each_recipient_except_sender(): void
     {
         $student = User::factory()->student()->inProgress()->create();
         $coach = User::factory()->coach()->inProgress()->create();
@@ -144,21 +141,14 @@ class NotificationDeliveryServiceTest extends TestCase
             'unassigned_at' => null,
         ]);
         $message = ChatMessage::factory()->for($room)->for($sender, 'sender')->create();
-
-        Mail::shouldReceive('mailer')
-            ->twice()
-            ->andThrow(new RuntimeException('mail transport unavailable'));
-        Log::shouldReceive('error')
-            ->twice()
-            ->withArgs(fn (string $message, array $context): bool => $message === 'Business event notification email delivery failed.'
-                && isset($context['notification_type'], $context['recipient_id'], $context['notification_id'], $context['exception']));
+        Notification::fake();
 
         app(NotificationDeliveryService::class)->chatMessage($message);
 
-        $this->assertDatabaseCount('notifications', 2);
-        $this->assertSame(1, $student->notifications()->count());
-        $this->assertSame(1, $coach->notifications()->count());
-        $this->assertSame(0, $sender->notifications()->count());
+        Notification::assertSentTo($student, BusinessEventNotification::class);
+        Notification::assertSentTo($coach, BusinessEventNotification::class);
+        Notification::assertNotSentTo($sender, BusinessEventNotification::class);
+        Notification::assertSentToTimes($student, BusinessEventNotification::class, 1);
     }
 
     public function test_mail_escapes_markdown_markup_in_user_supplied_names(): void
