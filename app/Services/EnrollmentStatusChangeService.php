@@ -9,6 +9,7 @@ use App\Models\Enrollment;
 use App\Models\EnrollmentStatusLog;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Enrollment 状態遷移の監査ログ(`EnrollmentStatusLog`)を INSERT する Service。
@@ -44,8 +45,10 @@ final class EnrollmentStatusChangeService
             'changed_at' => now(),
         ]);
 
-        Cache::forget(config('dashboard.admin_kpi_cache_key'));
-        Cache::forget(config('dashboard.admin_completion_rate_cache_key'));
+        DB::afterCommit(function (): void {
+            Cache::forget(config('dashboard.admin_kpi_cache_key'));
+            Cache::forget(config('dashboard.admin_completion_rate_cache_key'));
+        });
 
         return $log;
     }
