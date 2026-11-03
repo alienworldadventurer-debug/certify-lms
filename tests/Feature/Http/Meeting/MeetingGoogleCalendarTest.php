@@ -18,9 +18,11 @@ use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Http\Message\RequestInterface;
 use Tests\TestCase;
 
+#[Group('external')]
 class MeetingGoogleCalendarTest extends TestCase
 {
     use RefreshDatabase;

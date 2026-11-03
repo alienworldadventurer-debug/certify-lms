@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services\GoogleCalendar;
 
+use App\Enums\GoogleCredentialStatus;
+use App\Exceptions\GoogleCalendar\GoogleCalendarException;
 use App\Models\GoogleCredential;
 use App\Models\Meeting;
 use App\Models\User;
@@ -14,9 +16,12 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Http\Message\RequestInterface;
+use RuntimeException;
 use Tests\TestCase;
 
+#[Group('external')]
 class GoogleCalendarServiceTest extends TestCase
 {
     use RefreshDatabase;
@@ -80,7 +85,10 @@ class GoogleCalendarServiceTest extends TestCase
     {
         $coach = User::factory()->coach()->create();
         $credential = GoogleCredential::factory()->forCoach($coach)->create();
-        $service = $this->serviceWith([$this->googleErrorResponse(401, 'Invalid Credentials')]);
+        $service = $this->serviceWith([
+            $this->googleErrorResponse(401, 'Invalid Credentials'),
+            $this->jsonResponse(400, ['error' => 'invalid_grant']),
+        ]);
 
         $ranges = $service->busyRanges($credential, now(), now()->addDay());
 
@@ -145,7 +153,10 @@ class GoogleCalendarServiceTest extends TestCase
         $coach = User::factory()->coach()->create();
         $credential = GoogleCredential::factory()->forCoach($coach)->create();
         $meeting = $this->meetingFor($coach);
-        $service = $this->serviceWith([$this->googleErrorResponse(401, 'Invalid Credentials')]);
+        $service = $this->serviceWith([
+            $this->googleErrorResponse(401, 'Invalid Credentials'),
+            $this->jsonResponse(400, ['error' => 'invalid_grant']),
+        ]);
 
         $service->createMeetingEvent($meeting);
 
@@ -207,11 +218,31 @@ class GoogleCalendarServiceTest extends TestCase
         $coach = User::factory()->coach()->create();
         $credential = GoogleCredential::factory()->forCoach($coach)->create();
         $meeting = $this->meetingFor($coach, ['google_event_id' => 'event-123']);
-        $service = $this->serviceWith([$this->googleErrorResponse(401, 'Invalid Credentials')]);
+        $service = $this->serviceWith([
+            $this->googleErrorResponse(401, 'Invalid Credentials'),
+            $this->jsonResponse(400, ['error' => 'invalid_grant']),
+        ]);
 
         $service->deleteMeetingEvent($meeting);
 
         $this->assertDatabaseMissing('google_credentials', ['id' => $credential->id]);
+    }
+
+    public function test_delete_meeting_event_401_refreshes_token_and_retries_once(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $credential = GoogleCredential::factory()->forCoach($coach)->create();
+        $meeting = $this->meetingFor($coach, ['google_event_id' => 'event-123']);
+        $service = $this->serviceWith([
+            $this->googleErrorResponse(401, 'Invalid Credentials'),
+            $this->jsonResponse(200, ['access_token' => 'new-token', 'expires_in' => 3600]),
+            $this->jsonResponse(204, []),
+        ]);
+
+        $service->deleteMeetingEvent($meeting);
+
+        $this->assertCount(3, $this->history);
+        $this->assertDatabaseHas('google_credentials', ['id' => $credential->id]);
     }
 
     public function test_delete_meeting_event_skips_google_when_no_event_id(): void
@@ -238,5 +269,122 @@ class GoogleCalendarServiceTest extends TestCase
 
         $this->assertDatabaseMissing('google_credentials', ['id' => $credentialA->id]);
         $this->assertDatabaseHas('google_credentials', ['id' => $credentialB->id]);
+    }
+
+    public function test_authorization_url_contains_google_oauth_endpoint_and_state(): void
+    {
+        $service = $this->serviceWith([]);
+
+        $url = $service->authorizationUrl('state-token-xyz');
+
+        $this->assertStringContainsString('accounts.google.com/o/oauth2', $url);
+        $this->assertStringContainsString('state=state-token-xyz', $url);
+        $this->assertStringContainsString('access_type=offline', $url);
+    }
+
+    public function test_connect_exchanges_code_for_tokens_and_stores_credential(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $service = $this->serviceWith([
+            $this->jsonResponse(200, [
+                'access_token' => 'at-token-123',
+                'refresh_token' => 'rt-token-456',
+                'expires_in' => 3600,
+            ]),
+            $this->jsonResponse(200, ['id' => 'coach-calendar@example.com']),
+        ]);
+
+        $service->connect($coach, 'valid-auth-code');
+
+        $this->assertDatabaseHas('google_credentials', [
+            'user_id' => $coach->id,
+            'access_token' => 'at-token-123',
+            'refresh_token' => 'rt-token-456',
+            'calendar_id' => 'coach-calendar@example.com',
+            'status' => GoogleCredentialStatus::Active->value,
+        ]);
+        $this->assertCount(2, $this->history);
+    }
+
+    public function test_connect_throws_when_refresh_token_missing(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $service = $this->serviceWith([
+            $this->jsonResponse(200, [
+                'access_token' => 'at-token-123',
+                'expires_in' => 3600,
+            ]),
+        ]);
+
+        $this->expectException(GoogleCalendarException::class);
+        $this->expectExceptionMessage('Google からリフレッシュトークンが取得できませんでした。');
+
+        $service->connect($coach, 'auth-code-without-rt');
+    }
+
+    public function test_connect_throws_when_token_exchange_fails(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $service = $this->serviceWith([
+            $this->jsonResponse(400, ['error' => 'invalid_grant']),
+        ]);
+
+        $this->expectException(GoogleCalendarException::class);
+        $this->expectExceptionMessage('Google の認可コード交換に失敗しました。');
+
+        $service->connect($coach, 'bad-code');
+    }
+
+    public function test_expired_token_refreshes_automatically_before_api_call_and_succeeds(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $credential = GoogleCredential::factory()->forCoach($coach)->create([
+            'expires_at' => now()->subMinutes(10),
+            'access_token' => 'expired-token',
+            'refresh_token' => 'valid-refresh-token',
+        ]);
+        $service = $this->serviceWith([
+            $this->jsonResponse(200, ['access_token' => 'new-refreshed-token', 'expires_in' => 3600]),
+            $this->jsonResponse(200, ['calendars' => ['primary' => ['busy' => [
+                ['start' => '2026-10-30T10:00:00+09:00', 'end' => '2026-10-30T11:00:00+09:00'],
+            ]]]]),
+        ]);
+
+        $ranges = $service->busyRanges(
+            $credential,
+            Carbon::parse('2026-10-30 09:00', 'Asia/Tokyo'),
+            Carbon::parse('2026-10-30 18:00', 'Asia/Tokyo'),
+        );
+
+        $this->assertCount(1, $ranges);
+        $this->assertSame('new-refreshed-token', $credential->fresh()->access_token);
+        $this->assertTrue($credential->fresh()->expires_at->isFuture());
+        $this->assertCount(2, $this->history);
+    }
+
+    public function test_delete_meeting_event_treats_gone_410_as_success_and_keeps_credential(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $credential = GoogleCredential::factory()->forCoach($coach)->create();
+        $meeting = $this->meetingFor($coach, ['google_event_id' => 'event-gone']);
+        $service = $this->serviceWith([$this->googleErrorResponse(410, 'Gone')]);
+
+        $service->deleteMeetingEvent($meeting);
+
+        $this->assertDatabaseHas('google_credentials', ['id' => $credential->id]);
+    }
+
+    public function test_unmocked_google_client_throws_runtime_exception_in_test_environment(): void
+    {
+        $service = new GoogleCalendarService(null);
+        $coach = User::factory()->coach()->create();
+
+        try {
+            $service->connect($coach, 'code-without-mock');
+            $this->fail('GoogleCalendarException がスローされませんでした。');
+        } catch (GoogleCalendarException $e) {
+            $this->assertInstanceOf(RuntimeException::class, $e->getPrevious());
+            $this->assertStringContainsString('Unmocked Google API request', $e->getPrevious()->getMessage());
+        }
     }
 }

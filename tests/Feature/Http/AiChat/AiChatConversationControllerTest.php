@@ -17,6 +17,7 @@ use App\Models\Section;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\Group;
 use Tests\TestCase;
 
 /**
@@ -24,6 +25,7 @@ use Tests\TestCase;
  *
  * Gemini API は Http::fake で置き換え、外部通信は行わない。
  */
+#[Group('external')]
 class AiChatConversationControllerTest extends TestCase
 {
     use RefreshDatabase;
