@@ -155,14 +155,134 @@ class CrudTest extends TestCase
         $this->assertSame('published', $good->fresh()->status->value);
     }
 
+    public function test_assigned_coach_can_manage_section_questions(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $cert = Certification::factory()->published()->create();
+        $this->assignCoach($coach, $cert);
+        [, , $section] = $this->makePartChain($cert);
+        $category = $this->makeCategory($cert);
+
+        // 一覧表示
+        $this->actingAs($coach)
+            ->get(route('admin.sections.questions.index', $section))
+            ->assertOk()
+            ->assertViewIs('section-question.management.index');
+
+        // 作成画面表示
+        $this->actingAs($coach)
+            ->get(route('admin.sections.questions.create', $section))
+            ->assertOk()
+            ->assertViewIs('section-question.management.create');
+
+        // 作成
+        $this->actingAs($coach)
+            ->post(route('admin.sections.questions.store', $section), [
+                'body' => 'コーチ作成の問題文',
+                'explanation' => '解説',
+                'category_id' => $category->id,
+                'options' => [
+                    ['body' => 'A', 'is_correct' => true, 'order' => 0],
+                    ['body' => 'B', 'is_correct' => false, 'order' => 1],
+                ],
+            ])
+            ->assertRedirect();
+        $question = SectionQuestion::where('body', 'コーチ作成の問題文')->firstOrFail();
+
+        // 詳細表示
+        $this->actingAs($coach)
+            ->get(route('admin.section-questions.show', $question))
+            ->assertOk()
+            ->assertViewIs('section-question.management.show');
+
+        // 更新
+        $this->actingAs($coach)
+            ->patch(route('admin.section-questions.update', $question), [
+                'body' => '更新後の問題文',
+                'category_id' => $category->id,
+                'options' => [
+                    ['body' => 'A更新', 'is_correct' => true, 'order' => 0],
+                    ['body' => 'B更新', 'is_correct' => false, 'order' => 1],
+                ],
+            ])
+            ->assertRedirect(route('admin.section-questions.show', $question));
+        $this->assertSame('更新後の問題文', $question->fresh()->body);
+
+        // 公開
+        $this->actingAs($coach)
+            ->post(route('admin.section-questions.publish', $question))
+            ->assertRedirect(route('admin.section-questions.show', $question));
+        $this->assertSame('published', $question->fresh()->status->value);
+
+        // 下書き化
+        $this->actingAs($coach)
+            ->post(route('admin.section-questions.unpublish', $question))
+            ->assertRedirect(route('admin.section-questions.show', $question));
+        $this->assertSame('draft', $question->fresh()->status->value);
+
+        // 削除
+        $this->actingAs($coach)
+            ->delete(route('admin.section-questions.destroy', $question))
+            ->assertRedirect(route('admin.sections.questions.index', $section));
+        $this->assertDatabaseMissing('section_questions', ['id' => $question->id]);
+    }
+
     public function test_non_assigned_coach_cannot_view_section_questions(): void
     {
         $coach = User::factory()->coach()->create();
         $cert = Certification::factory()->published()->create();
         [, , $section] = $this->makePartChain($cert);
+        $category = $this->makeCategory($cert);
+        $question = SectionQuestion::factory()
+            ->forSection($section)
+            ->forCategory($category)
+            ->withOptions(2)
+            ->draft()
+            ->create();
 
+        // 一覧
         $this->actingAs($coach)
             ->get(route('admin.sections.questions.index', $section))
+            ->assertForbidden();
+
+        // 作成画面
+        $this->actingAs($coach)
+            ->get(route('admin.sections.questions.create', $section))
+            ->assertForbidden();
+
+        // 作成
+        $this->actingAs($coach)
+            ->post(route('admin.sections.questions.store', $section), [
+                'body' => '拒否',
+                'category_id' => $category->id,
+                'options' => [
+                    ['body' => 'A', 'is_correct' => true, 'order' => 0],
+                    ['body' => 'B', 'is_correct' => false, 'order' => 1],
+                ],
+            ])
+            ->assertForbidden();
+
+        // 詳細
+        $this->actingAs($coach)
+            ->get(route('admin.section-questions.show', $question))
+            ->assertForbidden();
+
+        // 更新
+        $this->actingAs($coach)
+            ->patch(route('admin.section-questions.update', $question), [
+                'body' => '拒否',
+                'category_id' => $category->id,
+            ])
+            ->assertForbidden();
+
+        // 公開
+        $this->actingAs($coach)
+            ->post(route('admin.section-questions.publish', $question))
+            ->assertForbidden();
+
+        // 削除
+        $this->actingAs($coach)
+            ->delete(route('admin.section-questions.destroy', $question))
             ->assertForbidden();
     }
 

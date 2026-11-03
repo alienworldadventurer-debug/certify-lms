@@ -92,6 +92,53 @@ class CrudTest extends TestCase
         $this->assertDatabaseMissing('question_categories', ['id' => $category->id]);
     }
 
+    public function test_assigned_coach_can_manage_question_categories(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $cert = Certification::factory()->published()->create();
+        $this->assignCoach($coach, $cert);
+
+        // index
+        $this->actingAs($coach)
+            ->get(route('admin.certifications.question-categories.index', $cert))
+            ->assertOk();
+
+        // store
+        $this->actingAs($coach)
+            ->post(route('admin.certifications.question-categories.store', $cert), [
+                'name' => '基礎理論',
+                'slug' => 'basic-theory',
+                'sort_order' => 1,
+            ])
+            ->assertRedirect();
+
+        $category = QuestionCategory::where('certification_id', $cert->id)
+            ->where('slug', 'basic-theory')
+            ->firstOrFail();
+
+        // update
+        $this->actingAs($coach)
+            ->patch(route('admin.question-categories.update', $category), [
+                'name' => '応用理論',
+                'slug' => 'applied-theory',
+                'sort_order' => 2,
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('question_categories', [
+            'id' => $category->id,
+            'name' => '応用理論',
+            'slug' => 'applied-theory',
+        ]);
+
+        // destroy
+        $this->actingAs($coach)
+            ->delete(route('admin.question-categories.destroy', $category))
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('question_categories', ['id' => $category->id]);
+    }
+
     public function test_non_assigned_coach_cannot_view(): void
     {
         $coach = User::factory()->coach()->create();
@@ -99,6 +146,26 @@ class CrudTest extends TestCase
 
         $this->actingAs($coach)
             ->get(route('admin.certifications.question-categories.index', $cert))
+            ->assertForbidden();
+
+        $this->actingAs($coach)
+            ->post(route('admin.certifications.question-categories.store', $cert), [
+                'name' => '基礎理論',
+                'slug' => 'basic-theory',
+            ])
+            ->assertForbidden();
+
+        $category = QuestionCategory::factory()->forCertification($cert)->create();
+
+        $this->actingAs($coach)
+            ->patch(route('admin.question-categories.update', $category), [
+                'name' => '変更',
+                'slug' => 'updated',
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($coach)
+            ->delete(route('admin.question-categories.destroy', $category))
             ->assertForbidden();
     }
 }

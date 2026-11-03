@@ -10,6 +10,7 @@ use App\Models\Part;
 use App\Models\Section;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Support\ContentTestHelpers;
 use Tests\TestCase;
 
 /**
@@ -18,7 +19,34 @@ use Tests\TestCase;
  */
 class ShowTest extends TestCase
 {
-    use RefreshDatabase;
+    use ContentTestHelpers, RefreshDatabase;
+
+    public function test_assigned_coach_can_view_chapter(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $cert = Certification::factory()->published()->create();
+        $this->assignCoach($coach, $cert);
+        $part = Part::factory()->forCertification($cert)->published()->create();
+        $chapter = Chapter::factory()->forPart($part)->published()->create();
+
+        $this->actingAs($coach)
+            ->get(route('admin.chapters.show', $chapter))
+            ->assertOk()
+            ->assertViewIs('chapter.management.show')
+            ->assertViewHas('chapter');
+    }
+
+    public function test_non_assigned_coach_cannot_view_chapter(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $cert = Certification::factory()->published()->create();
+        $part = Part::factory()->forCertification($cert)->published()->create();
+        $chapter = Chapter::factory()->forPart($part)->published()->create();
+
+        $this->actingAs($coach)
+            ->get(route('admin.chapters.show', $chapter))
+            ->assertForbidden();
+    }
 
     public function test_sections_are_listed_in_order_ascending(): void
     {
