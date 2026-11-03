@@ -54,9 +54,39 @@ class QuestionCategoryPolicyTest extends TestCase
         $otherCategory = QuestionCategory::factory()->for($otherCert)->create();
         $policy = new QuestionCategoryPolicy;
 
-        // Act & Assert
+        // Act & Assert: 担当資格に対する全 ability の許可検証
+        $this->assertTrue($policy->viewAny($coach, $assignedCert));
+        $this->assertTrue($policy->create($coach, $assignedCert));
         $this->assertTrue($policy->update($coach, $assignedCategory), 'coach は担当資格の category を更新できるはず');
+        $this->assertTrue($policy->delete($coach, $assignedCategory));
+
+        // Act & Assert: 非担当資格に対する全 ability の拒否検証
+        $this->assertFalse($policy->viewAny($coach, $otherCert));
+        $this->assertFalse($policy->create($coach, $otherCert));
         $this->assertFalse($policy->update($coach, $otherCategory), '非担当資格の category は更新できないはず');
+        $this->assertFalse($policy->delete($coach, $otherCategory));
+    }
+
+    public function test_coach_unassigned_cannot_manage(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $admin = User::factory()->admin()->create();
+        $cert = Certification::factory()->published()->create();
+        CertificationCoachAssignment::create([
+            'id' => (string) Str::ulid(),
+            'certification_id' => $cert->id,
+            'user_id' => $coach->id,
+            'assigned_by_user_id' => $admin->id,
+            'assigned_at' => now()->subMonth(),
+            'unassigned_at' => now()->subDay(),
+        ]);
+        $category = QuestionCategory::factory()->for($cert)->create();
+        $policy = new QuestionCategoryPolicy;
+
+        $this->assertFalse($policy->viewAny($coach, $cert));
+        $this->assertFalse($policy->create($coach, $cert));
+        $this->assertFalse($policy->update($coach, $category));
+        $this->assertFalse($policy->delete($coach, $category));
     }
 
     public function test_student_cannot_manage_any_category(): void

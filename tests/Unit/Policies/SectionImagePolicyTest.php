@@ -51,13 +51,45 @@ class SectionImagePolicyTest extends TestCase
         $assignedSection = Section::factory()->for(
             Chapter::factory()->for(Part::factory()->for($assignedCert)->published())->published()
         )->published()->create();
+        $assignedImage = SectionImage::factory()->for($assignedSection)->create();
+
         $otherSection = Section::factory()->for(
             Chapter::factory()->for(Part::factory()->for($otherCert)->published())->published()
         )->published()->create();
+        $otherImage = SectionImage::factory()->for($otherSection)->create();
+
         $policy = new SectionImagePolicy;
 
+        // 担当資格に対する全 ability の許可検証
         $this->assertTrue($policy->create($coach, $assignedSection));
+        $this->assertTrue($policy->delete($coach, $assignedImage));
+
+        // 非担当資格に対する全 ability の拒否検証
         $this->assertFalse($policy->create($coach, $otherSection));
+        $this->assertFalse($policy->delete($coach, $otherImage));
+    }
+
+    public function test_coach_unassigned_cannot_manage(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $admin = User::factory()->admin()->create();
+        $cert = Certification::factory()->published()->create();
+        CertificationCoachAssignment::create([
+            'id' => (string) Str::ulid(),
+            'certification_id' => $cert->id,
+            'user_id' => $coach->id,
+            'assigned_by_user_id' => $admin->id,
+            'assigned_at' => now()->subMonth(),
+            'unassigned_at' => now()->subDay(),
+        ]);
+        $section = Section::factory()->for(
+            Chapter::factory()->for(Part::factory()->for($cert)->published())->published()
+        )->published()->create();
+        $image = SectionImage::factory()->for($section)->create();
+        $policy = new SectionImagePolicy;
+
+        $this->assertFalse($policy->create($coach, $section));
+        $this->assertFalse($policy->delete($coach, $image));
     }
 
     public function test_student_cannot(): void

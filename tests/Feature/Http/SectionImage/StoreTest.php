@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Http\SectionImage;
 
 use App\Models\Certification;
+use App\Models\SectionImage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -15,6 +16,58 @@ use Tests\TestCase;
 class StoreTest extends TestCase
 {
     use ContentTestHelpers, RefreshDatabase;
+
+    public function test_assigned_coach_can_upload_and_delete_image(): void
+    {
+        Storage::fake('public');
+        $coach = User::factory()->coach()->create();
+        $cert = Certification::factory()->published()->create();
+        $this->assignCoach($coach, $cert);
+        [$part, $chapter, $section] = $this->makePartChain($cert, 'draft');
+
+        $file = UploadedFile::fake()->image('diagram.png', 400, 300);
+
+        // アップロード
+        $response = $this->actingAs($coach)
+            ->postJson(route('admin.sections.images.store', $section), [
+                'file' => $file,
+            ])
+            ->assertCreated()
+            ->assertJsonStructure(['id', 'url', 'alt_placeholder']);
+
+        $image = SectionImage::where('section_id', $section->id)->firstOrFail();
+
+        // 削除
+        $this->actingAs($coach)
+            ->deleteJson(route('admin.section-images.destroy', $image))
+            ->assertNoContent();
+
+        $this->assertDatabaseMissing('section_images', ['id' => $image->id]);
+    }
+
+    public function test_non_assigned_coach_cannot_manage_images(): void
+    {
+        Storage::fake('public');
+        $coach = User::factory()->coach()->create();
+        $cert = Certification::factory()->published()->create();
+        [$part, $chapter, $section] = $this->makePartChain($cert, 'draft');
+
+        $file = UploadedFile::fake()->image('diagram.png', 400, 300);
+
+        // アップロード拒否
+        $this->actingAs($coach)
+            ->postJson(route('admin.sections.images.store', $section), [
+                'file' => $file,
+            ])
+            ->assertForbidden();
+
+        $image = SectionImage::factory()->for($section)->create();
+
+        // 削除拒否
+        $this->actingAs($coach)
+            ->deleteJson(route('admin.section-images.destroy', $image))
+            ->assertForbidden();
+    }
 
     public function test_admin_can_upload_image(): void
     {
