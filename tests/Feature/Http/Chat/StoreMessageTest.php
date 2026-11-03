@@ -66,7 +66,8 @@ class StoreMessageTest extends TestCase
         Notification::assertSentTo($coach, BusinessEventNotification::class, function (BusinessEventNotification $notification, array $channels) {
             return $channels === ['database', 'mail']
                 && $notification->afterCommit === true
-                && $notification->tries === 3;
+                && $notification->tries === 3
+                && $notification->backoff === [60, 300, 900];
         });
         Notification::assertNotSentTo($student, BusinessEventNotification::class);
         $response->assertSessionHas('success', 'メッセージを送信しました。');

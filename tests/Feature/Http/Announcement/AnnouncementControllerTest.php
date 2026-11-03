@@ -129,7 +129,8 @@ class AnnouncementControllerTest extends TestCase
         Notification::assertSentTo($first, AdminAnnouncementNotification::class, function (AdminAnnouncementNotification $notification, array $channels): bool {
             return $channels === ['database', 'mail']
                 && $notification->afterCommit === true
-                && $notification->tries === 3;
+                && $notification->tries === 3
+                && $notification->backoff === [60, 300, 900];
         });
         Notification::assertSentTo($second, AdminAnnouncementNotification::class);
     }

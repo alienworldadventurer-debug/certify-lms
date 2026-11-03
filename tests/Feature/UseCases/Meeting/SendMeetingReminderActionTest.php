@@ -299,7 +299,10 @@ class SendMeetingReminderActionTest extends TestCase
         Notification::assertSentTo(
             $this->student,
             MeetingReminderNotification::class,
-            fn (MeetingReminderNotification $notification, array $channels): bool => $channels === ['mail'],
+            fn (MeetingReminderNotification $notification, array $channels): bool => $channels === ['mail']
+                && $notification->afterCommit === true
+                && $notification->tries === 3
+                && $notification->backoff === [60, 300, 900],
         );
     }
 
