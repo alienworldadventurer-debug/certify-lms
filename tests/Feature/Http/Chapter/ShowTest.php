@@ -10,6 +10,7 @@ use App\Models\Part;
 use App\Models\Section;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\Support\ContentTestHelpers;
 use Tests\TestCase;
 
@@ -48,6 +49,47 @@ class ShowTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_unassigned_coach_cannot_view_chapter(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $admin = User::factory()->admin()->create();
+        $cert = Certification::factory()->published()->create();
+        $cert->coaches()->attach($coach->id, [
+            'id' => (string) Str::ulid(),
+            'assigned_by_user_id' => $admin->id,
+            'assigned_at' => now()->subMonth(),
+            'unassigned_at' => now()->subDay(),
+        ]);
+        $part = Part::factory()->forCertification($cert)->published()->create();
+        $chapter = Chapter::factory()->forPart($part)->published()->create();
+
+        $this->actingAs($coach)
+            ->get(route('admin.chapters.show', $chapter))
+            ->assertForbidden();
+    }
+
+    public function test_student_cannot_view_admin_chapter(): void
+    {
+        $student = User::factory()->student()->create();
+        $cert = Certification::factory()->published()->create();
+        $part = Part::factory()->forCertification($cert)->published()->create();
+        $chapter = Chapter::factory()->forPart($part)->published()->create();
+
+        $this->actingAs($student)
+            ->get(route('admin.chapters.show', $chapter))
+            ->assertForbidden();
+    }
+
+    public function test_guest_is_redirected_to_login(): void
+    {
+        $cert = Certification::factory()->published()->create();
+        $part = Part::factory()->forCertification($cert)->published()->create();
+        $chapter = Chapter::factory()->forPart($part)->published()->create();
+
+        $this->get(route('admin.chapters.show', $chapter))
+            ->assertRedirect(route('login'));
+    }
+
     public function test_sections_are_listed_in_order_ascending(): void
     {
         // Arrange: order を登録順とずらして Section を作成
@@ -55,9 +97,9 @@ class ShowTest extends TestCase
         $cert = Certification::factory()->published()->create();
         $part = Part::factory()->forCertification($cert)->published()->create();
         $chapter = Chapter::factory()->forPart($part)->published()->create();
-        Section::factory()->forChapter($chapter)->published()->create(['order' => 3]);
-        Section::factory()->forChapter($chapter)->published()->create(['order' => 1]);
-        Section::factory()->forChapter($chapter)->published()->create(['order' => 2]);
+        Section::factory()->forChapter($chapter)->published()->create(['order' => 3, 'title' => 'Charlie Section']);
+        Section::factory()->forChapter($chapter)->published()->create(['order' => 1, 'title' => 'Alpha Section']);
+        Section::factory()->forChapter($chapter)->published()->create(['order' => 2, 'title' => 'Bravo Section']);
 
         // Act
         $response = $this->actingAs($admin)
@@ -70,5 +112,43 @@ class ShowTest extends TestCase
             $response->viewData('chapter')->sections->pluck('order')->all(),
             'Chapter 詳細の Section 一覧は order 昇順で並ぶはず(登録順ではない)',
         );
+        // HTML 上の描画順も order 昇順であることを担保
+        $response->assertSeeTextInOrder(['Alpha Section', 'Bravo Section', 'Charlie Section']);
+    }
+
+    public function test_assigned_coach_sees_sections_in_order_ascending(): void
+    {
+        // Arrange
+        $coach = User::factory()->coach()->create();
+        $cert = Certification::factory()->published()->create();
+        $this->assignCoach($coach, $cert);
+        $part = Part::factory()->forCertification($cert)->published()->create();
+        $chapter = Chapter::factory()->forPart($part)->published()->create();
+        Section::factory()->forChapter($chapter)->published()->create(['order' => 3, 'title' => 'Charlie Section']);
+        Section::factory()->forChapter($chapter)->published()->create(['order' => 1, 'title' => 'Alpha Section']);
+        Section::factory()->forChapter($chapter)->published()->create(['order' => 2, 'title' => 'Bravo Section']);
+
+        // Act
+        $response = $this->actingAs($coach)
+            ->get(route('admin.chapters.show', $chapter));
+
+        // Assert
+        $response->assertOk();
+        $this->assertSame(
+            [1, 2, 3],
+            $response->viewData('chapter')->sections->pluck('order')->all(),
+            '担当コーチが閲覧する Chapter 詳細の Section 一覧も order 昇順で並ぶはず',
+        );
+        // HTML 上の描画順も order 昇順であることを担保
+        $response->assertSeeTextInOrder(['Alpha Section', 'Bravo Section', 'Charlie Section']);
+    }
+
+    public function test_nonexistent_chapter_returns_404(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->get(route('admin.chapters.show', ['chapter' => (string) Str::ulid()]))
+            ->assertNotFound();
     }
 }
