@@ -84,9 +84,9 @@ class IndexTest extends TestCase
         // Arrange: order を登録順とずらして作成(後から order=1 を登録)
         $admin = User::factory()->admin()->create();
         $cert = Certification::factory()->published()->create();
-        Part::factory()->forCertification($cert)->create(['order' => 3]);
-        Part::factory()->forCertification($cert)->create(['order' => 1]);
-        Part::factory()->forCertification($cert)->create(['order' => 2]);
+        Part::factory()->forCertification($cert)->create(['order' => 3, 'title' => 'Charlie Part']);
+        Part::factory()->forCertification($cert)->create(['order' => 1, 'title' => 'Alpha Part']);
+        Part::factory()->forCertification($cert)->create(['order' => 2, 'title' => 'Bravo Part']);
 
         // Act
         $response = $this->actingAs($admin)
@@ -99,6 +99,8 @@ class IndexTest extends TestCase
             $response->viewData('parts')->pluck('order')->all(),
             'Part 一覧は order 昇順で並ぶはず(登録順ではない)',
         );
+        // HTML 上の描画順も order 昇順であることを担保
+        $response->assertSeeTextInOrder(['Alpha Part', 'Bravo Part', 'Charlie Part']);
     }
 
     public function test_assigned_coach_sees_parts_in_order_ascending(): void
@@ -107,9 +109,9 @@ class IndexTest extends TestCase
         $coach = User::factory()->coach()->create();
         $cert = Certification::factory()->published()->create();
         $this->assignCoach($coach, $cert);
-        Part::factory()->forCertification($cert)->create(['order' => 3]);
-        Part::factory()->forCertification($cert)->create(['order' => 1]);
-        Part::factory()->forCertification($cert)->create(['order' => 2]);
+        Part::factory()->forCertification($cert)->create(['order' => 3, 'title' => 'Charlie Part']);
+        Part::factory()->forCertification($cert)->create(['order' => 1, 'title' => 'Alpha Part']);
+        Part::factory()->forCertification($cert)->create(['order' => 2, 'title' => 'Bravo Part']);
 
         // Act
         $response = $this->actingAs($coach)
@@ -122,5 +124,7 @@ class IndexTest extends TestCase
             $response->viewData('parts')->pluck('order')->all(),
             '担当コーチが閲覧する Part 一覧も order 昇順で並ぶはず',
         );
+        // HTML 上の描画順も order 昇順であることを担保
+        $response->assertSeeTextInOrder(['Alpha Part', 'Bravo Part', 'Charlie Part']);
     }
 }

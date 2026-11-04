@@ -90,9 +90,9 @@ class ShowTest extends TestCase
         $admin = User::factory()->admin()->create();
         $cert = Certification::factory()->published()->create();
         $part = Part::factory()->forCertification($cert)->published()->create();
-        Chapter::factory()->forPart($part)->published()->create(['order' => 3]);
-        Chapter::factory()->forPart($part)->published()->create(['order' => 1]);
-        Chapter::factory()->forPart($part)->published()->create(['order' => 2]);
+        Chapter::factory()->forPart($part)->published()->create(['order' => 3, 'title' => 'Charlie Chapter']);
+        Chapter::factory()->forPart($part)->published()->create(['order' => 1, 'title' => 'Alpha Chapter']);
+        Chapter::factory()->forPart($part)->published()->create(['order' => 2, 'title' => 'Bravo Chapter']);
 
         // Act
         $response = $this->actingAs($admin)
@@ -105,6 +105,8 @@ class ShowTest extends TestCase
             $response->viewData('part')->chapters->pluck('order')->all(),
             'Part 詳細の Chapter 一覧は order 昇順で並ぶはず(登録順ではない)',
         );
+        // HTML 上の描画順も order 昇順であることを担保
+        $response->assertSeeTextInOrder(['Alpha Chapter', 'Bravo Chapter', 'Charlie Chapter']);
     }
 
     public function test_assigned_coach_sees_chapters_in_order_ascending(): void
@@ -114,9 +116,9 @@ class ShowTest extends TestCase
         $cert = Certification::factory()->published()->create();
         $this->assignCoach($coach, $cert);
         $part = Part::factory()->forCertification($cert)->published()->create();
-        Chapter::factory()->forPart($part)->published()->create(['order' => 3]);
-        Chapter::factory()->forPart($part)->published()->create(['order' => 1]);
-        Chapter::factory()->forPart($part)->published()->create(['order' => 2]);
+        Chapter::factory()->forPart($part)->published()->create(['order' => 3, 'title' => 'Charlie Chapter']);
+        Chapter::factory()->forPart($part)->published()->create(['order' => 1, 'title' => 'Alpha Chapter']);
+        Chapter::factory()->forPart($part)->published()->create(['order' => 2, 'title' => 'Bravo Chapter']);
 
         // Act
         $response = $this->actingAs($coach)
@@ -129,5 +131,16 @@ class ShowTest extends TestCase
             $response->viewData('part')->chapters->pluck('order')->all(),
             '担当コーチが閲覧する Part 詳細の Chapter 一覧も order 昇順で並ぶはず',
         );
+        // HTML 上の描画順も order 昇順であることを担保
+        $response->assertSeeTextInOrder(['Alpha Chapter', 'Bravo Chapter', 'Charlie Chapter']);
+    }
+
+    public function test_nonexistent_part_returns_404(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->get(route('admin.parts.show', ['part' => (string) Str::ulid()]))
+            ->assertNotFound();
     }
 }
