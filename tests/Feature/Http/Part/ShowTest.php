@@ -9,6 +9,7 @@ use App\Models\Chapter;
 use App\Models\Part;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\Support\ContentTestHelpers;
 use Tests\TestCase;
 
@@ -43,6 +44,44 @@ class ShowTest extends TestCase
         $this->actingAs($coach)
             ->get(route('admin.parts.show', $part))
             ->assertForbidden();
+    }
+
+    public function test_unassigned_coach_cannot_view_part(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $admin = User::factory()->admin()->create();
+        $cert = Certification::factory()->published()->create();
+        $cert->coaches()->attach($coach->id, [
+            'id' => (string) Str::ulid(),
+            'assigned_by_user_id' => $admin->id,
+            'assigned_at' => now()->subMonth(),
+            'unassigned_at' => now()->subDay(),
+        ]);
+        $part = Part::factory()->forCertification($cert)->published()->create();
+
+        $this->actingAs($coach)
+            ->get(route('admin.parts.show', $part))
+            ->assertForbidden();
+    }
+
+    public function test_student_cannot_view_admin_part(): void
+    {
+        $student = User::factory()->student()->create();
+        $cert = Certification::factory()->published()->create();
+        $part = Part::factory()->forCertification($cert)->published()->create();
+
+        $this->actingAs($student)
+            ->get(route('admin.parts.show', $part))
+            ->assertForbidden();
+    }
+
+    public function test_guest_is_redirected_to_login(): void
+    {
+        $cert = Certification::factory()->published()->create();
+        $part = Part::factory()->forCertification($cert)->published()->create();
+
+        $this->get(route('admin.parts.show', $part))
+            ->assertRedirect(route('login'));
     }
 
     public function test_chapters_are_listed_in_order_ascending(): void
