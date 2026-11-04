@@ -100,4 +100,27 @@ class IndexTest extends TestCase
             'Part 一覧は order 昇順で並ぶはず(登録順ではない)',
         );
     }
+
+    public function test_assigned_coach_sees_parts_in_order_ascending(): void
+    {
+        // Arrange
+        $coach = User::factory()->coach()->create();
+        $cert = Certification::factory()->published()->create();
+        $this->assignCoach($coach, $cert);
+        Part::factory()->forCertification($cert)->create(['order' => 3]);
+        Part::factory()->forCertification($cert)->create(['order' => 1]);
+        Part::factory()->forCertification($cert)->create(['order' => 2]);
+
+        // Act
+        $response = $this->actingAs($coach)
+            ->get(route('admin.certifications.parts.index', $cert));
+
+        // Assert
+        $response->assertOk();
+        $this->assertSame(
+            [1, 2, 3],
+            $response->viewData('parts')->pluck('order')->all(),
+            '担当コーチが閲覧する Part 一覧も order 昇順で並ぶはず',
+        );
+    }
 }

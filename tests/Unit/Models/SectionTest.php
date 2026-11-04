@@ -96,6 +96,22 @@ class SectionTest extends TestCase
         $this->assertTrue($results->first()->is($target));
     }
 
+    public function test_scope_ordered_sorts_by_order_column(): void
+    {
+        // Arrange
+        $chapter = Chapter::factory()->published()->create();
+        $first = Section::factory()->for($chapter)->create(['order' => 1]);
+        $third = Section::factory()->for($chapter)->create(['order' => 3]);
+        $second = Section::factory()->for($chapter)->create(['order' => 2]);
+
+        // Act
+        $results = Section::ordered()->get();
+
+        // Assert
+        $this->assertTrue($results->first()->is($first), 'order 昇順で先頭は order=1 のはず');
+        $this->assertTrue($results->last()->is($third), 'order 昇順で末尾は order=3 のはず');
+    }
+
     public function test_status_cast_converts_to_enum(): void
     {
         // Arrange

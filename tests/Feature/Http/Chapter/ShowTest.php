@@ -71,4 +71,29 @@ class ShowTest extends TestCase
             'Chapter 詳細の Section 一覧は order 昇順で並ぶはず(登録順ではない)',
         );
     }
+
+    public function test_assigned_coach_sees_sections_in_order_ascending(): void
+    {
+        // Arrange
+        $coach = User::factory()->coach()->create();
+        $cert = Certification::factory()->published()->create();
+        $this->assignCoach($coach, $cert);
+        $part = Part::factory()->forCertification($cert)->published()->create();
+        $chapter = Chapter::factory()->forPart($part)->published()->create();
+        Section::factory()->forChapter($chapter)->published()->create(['order' => 3]);
+        Section::factory()->forChapter($chapter)->published()->create(['order' => 1]);
+        Section::factory()->forChapter($chapter)->published()->create(['order' => 2]);
+
+        // Act
+        $response = $this->actingAs($coach)
+            ->get(route('admin.chapters.show', $chapter));
+
+        // Assert
+        $response->assertOk();
+        $this->assertSame(
+            [1, 2, 3],
+            $response->viewData('chapter')->sections->pluck('order')->all(),
+            '担当コーチが閲覧する Chapter 詳細の Section 一覧も order 昇順で並ぶはず',
+        );
+    }
 }
