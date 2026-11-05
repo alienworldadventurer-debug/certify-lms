@@ -72,7 +72,10 @@ class UserFactory extends Factory
 
     public function withdrawn(): static
     {
-        return $this->state(fn () => ['status' => UserStatus::Withdrawn->value]);
+        return $this->state(fn () => [
+            'status' => UserStatus::Withdrawn->value,
+            'deleted_at' => now(),
+        ]);
     }
 
     public function unverified(): static

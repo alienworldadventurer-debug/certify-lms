@@ -40,6 +40,12 @@ class IndexTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_guest_is_redirected_to_login(): void
+    {
+        $this->get(route('admin.users.index'))
+            ->assertRedirect(route('login'));
+    }
+
     public function test_keyword_search_filters_by_name_and_email(): void
     {
         $admin = User::factory()->admin()->create();
@@ -56,6 +62,31 @@ class IndexTest extends TestCase
         $response->assertOk();
         $response->assertSee('sato@example.test');
         $response->assertDontSee('yamada@example.test');
+    }
+
+    public function test_invalid_filters_return_validation_errors(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.index', [
+                'keyword' => str_repeat('x', 101),
+                'role' => 'invalid',
+                'status' => 'invalid',
+                'page' => 0,
+            ]))
+            ->assertSessionHasErrors(['keyword', 'role', 'status', 'page']);
+    }
+
+    public function test_empty_search_results_show_empty_state(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.index', ['keyword' => 'no-matching-user']))
+            ->assertOk()
+            ->assertSee('該当するユーザーがいません')
+            ->assertViewHas('users', fn ($users): bool => $users->total() === 0);
     }
 
     public function test_role_filter_returns_only_matching_role(): void
@@ -97,8 +128,31 @@ class IndexTest extends TestCase
         $response->assertOk();
         $response->assertSee('active@example.test');
         $response->assertDontSee('gone@example.test');
+        $users = $response->viewData('users')->getCollection();
+        $this->assertTrue($users->contains($active));
+        $this->assertFalse($users->contains($gone));
         // UserWithdrawalService 経由で email が {ulid}@deleted.invalid にリネームされる
         $response->assertDontSee($gone->fresh()->email);
+    }
+
+    public function test_in_progress_status_filter_excludes_withdrawn_users(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $active = User::factory()->create([
+            'email' => 'active@example.test',
+            'status' => UserStatus::InProgress->value,
+        ]);
+        $gone = User::factory()->create(['email' => 'gone@example.test']);
+        app(UserWithdrawalService::class)->withdraw($gone);
+
+        $response = $this->actingAs($admin)->get(route('admin.users.index', [
+            'status' => UserStatus::InProgress->value,
+        ]));
+
+        $response->assertOk();
+        $users = $response->viewData('users')->getCollection();
+        $this->assertTrue($users->contains($active));
+        $this->assertFalse($users->contains($gone));
     }
 
     public function test_status_filter_includes_withdrawn_when_explicitly_selected(): void
