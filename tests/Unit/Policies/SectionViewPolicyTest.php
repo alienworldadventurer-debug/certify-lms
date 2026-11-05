@@ -49,6 +49,22 @@ class SectionViewPolicyTest extends TestCase
         $this->assertFalse(app(SectionViewPolicy::class)->view($admin, $section));
     }
 
+    public function test_view_denied_for_coach(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $section = Section::factory()->create();
+
+        $this->assertFalse(app(SectionViewPolicy::class)->view($coach, $section));
+    }
+
+    public function test_view_denied_for_student_without_enrollment(): void
+    {
+        $student = User::factory()->student()->create();
+        $section = Section::factory()->create();
+
+        $this->assertFalse(app(SectionViewPolicy::class)->view($student, $section));
+    }
+
     /**
      * @return array{0: User, 1: Section}
      */

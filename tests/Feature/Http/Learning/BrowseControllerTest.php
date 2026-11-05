@@ -86,6 +86,9 @@ class BrowseControllerTest extends TestCase
         $response = $this->actingAs($student)->get(route('learning.parts.show', $part));
 
         $response->assertOk();
+        $response->assertViewIs('learning.parts.show');
+        $response->assertViewHas('part', $part);
+        $response->assertViewHas('chapters');
     }
 
     public function test_show_part_forbidden_for_non_enrolled_student(): void
@@ -107,6 +110,27 @@ class BrowseControllerTest extends TestCase
         $response = $this->actingAs($student)->get(route('learning.chapters.show', $chapter));
 
         $response->assertNotFound();
+    }
+
+    public function test_show_part_404_when_draft_part(): void
+    {
+        [$student, $certification] = $this->buildStudentAndCertification();
+        $part = Part::factory()->for($certification)->create(['status' => ContentStatus::Draft->value]);
+
+        $this->actingAs($student)
+            ->get(route('learning.parts.show', $part))
+            ->assertNotFound();
+    }
+
+    public function test_show_chapter_404_when_draft_chapter(): void
+    {
+        [$student, $certification] = $this->buildStudentAndCertification();
+        $part = Part::factory()->for($certification)->create(['status' => ContentStatus::Published->value]);
+        $chapter = Chapter::factory()->for($part)->create(['status' => ContentStatus::Draft->value]);
+
+        $this->actingAs($student)
+            ->get(route('learning.chapters.show', $chapter))
+            ->assertNotFound();
     }
 
     public function test_show_chapter_forbidden_for_non_enrolled_student(): void
@@ -133,6 +157,8 @@ class BrowseControllerTest extends TestCase
         $response = $this->actingAs($student)->get(route('learning.sections.show', $section));
 
         $response->assertOk();
+        $response->assertViewIs('learning.sections.show');
+        $response->assertViewHas('section', $section);
         $this->assertDatabaseHas('learning_sessions', [
             'user_id' => $student->id,
             'section_id' => $section->id,
@@ -167,7 +193,11 @@ class BrowseControllerTest extends TestCase
     {
         [$student, $certification, $section] = $this->buildSectionFor(EnrollmentStatus::Passed);
 
-        $this->actingAs($student)->get(route('learning.sections.show', $section))->assertOk();
+        $this->actingAs($student)
+            ->get(route('learning.sections.show', $section))
+            ->assertOk()
+            ->assertViewIs('learning.sections.show')
+            ->assertViewHas('section', $section);
     }
 
     public function test_show_section_for_failed_enrollment_returns_403(): void
@@ -262,6 +292,23 @@ class BrowseControllerTest extends TestCase
             'status' => ContentStatus::Published->value,
             'body' => '# テスト本文',
         ]);
+
+        $this->actingAs($student)
+            ->get(route('learning.sections.show', $section))
+            ->assertNotFound();
+
+        $this->assertDatabaseMissing('learning_sessions', [
+            'user_id' => $student->id,
+            'section_id' => $section->id,
+        ]);
+    }
+
+    public function test_show_section_404_when_draft_section(): void
+    {
+        [$student, $certification] = $this->buildStudentAndCertification();
+        $part = Part::factory()->for($certification)->create(['status' => ContentStatus::Published->value]);
+        $chapter = Chapter::factory()->for($part)->create(['status' => ContentStatus::Published->value]);
+        $section = Section::factory()->for($chapter)->create(['status' => ContentStatus::Draft->value]);
 
         $this->actingAs($student)
             ->get(route('learning.sections.show', $section))
