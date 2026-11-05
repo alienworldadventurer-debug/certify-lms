@@ -260,7 +260,9 @@ Route::middleware(['auth', 'role:admin'])->prefix('admin')->group(function () {
     Route::get('users/{user}', [UserController::class, 'show'])
         ->withTrashed()
         ->name('admin.users.show');
-    Route::post('users/{user}/withdraw', [UserController::class, 'withdraw'])->name('admin.users.withdraw');
+    Route::post('users/{user}/withdraw', [UserController::class, 'withdraw'])
+        ->withTrashed()
+        ->name('admin.users.withdraw');
     Route::post('users/{user}/extend-course', [UserController::class, 'extendCourse'])->name('admin.users.extendCourse');
     Route::post('users/{user}/grant-meeting-quota', [UserController::class, 'grantMeetingQuota'])->name('admin.users.grantMeetingQuota');
 

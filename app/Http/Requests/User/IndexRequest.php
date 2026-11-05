@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\User;
 
+use App\Enums\UserRole;
 use App\Enums\UserStatus;
 use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
@@ -28,7 +29,7 @@ class IndexRequest extends FormRequest
     {
         return [
             'keyword' => ['nullable', 'string', 'max:100'],
-            'role' => ['nullable', 'in:admin,coach,student'],
+            'role' => ['nullable', Rule::enum(UserRole::class)],
             'status' => ['nullable', Rule::enum(UserStatus::class)],
             'page' => ['nullable', 'integer', 'min:1'],
         ];
