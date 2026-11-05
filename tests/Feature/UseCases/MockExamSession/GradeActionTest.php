@@ -11,6 +11,7 @@ use App\Models\MockExamQuestion;
 use App\Models\MockExamSession;
 use App\UseCases\MockExamSession\GradeAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class GradeActionTest extends TestCase
@@ -96,6 +97,57 @@ class GradeActionTest extends TestCase
         $this->assertSame(6, $session->total_correct);
         $this->assertEquals(100.00, (float) $session->score_percentage);
         $this->assertTrue($session->pass);
+    }
+
+    #[DataProvider('hundredPercentThresholdResults')]
+    public function test_hundred_percent_threshold_requires_full_marks(int $correctAnswers, float $expectedPercentage, bool $expectedPass): void
+    {
+        $mockExam = MockExam::factory()->published()->passingScore(100)->create();
+        $questions = collect();
+        for ($i = 0; $i < 5; $i++) {
+            $questions->push(MockExamQuestion::factory()->forMockExam($mockExam)->withOptions(4, 0)->create(['order' => $i]));
+        }
+
+        $session = MockExamSession::factory()
+            ->forMockExam($mockExam)
+            ->inProgress()
+            ->create([
+                'generated_question_ids' => $questions->pluck('id')->all(),
+                'total_questions' => 5,
+                'passing_score_snapshot' => 100,
+            ]);
+
+        foreach ($questions as $index => $question) {
+            $selectedOption = $question->options->firstWhere('is_correct', $index < $correctAnswers);
+
+            MockExamAnswer::factory()->create([
+                'mock_exam_session_id' => $session->id,
+                'mock_exam_question_id' => $question->id,
+                'selected_option_id' => $selectedOption->id,
+                'selected_option_body' => $selectedOption->body,
+                'is_correct' => false,
+                'answered_at' => now(),
+            ]);
+        }
+
+        (app(GradeAction::class))($session);
+
+        $session->refresh();
+        $this->assertSame(MockExamSessionStatus::Graded, $session->status);
+        $this->assertSame($correctAnswers, $session->total_correct);
+        $this->assertSame($expectedPercentage, (float) $session->score_percentage);
+        $this->assertSame($expectedPass, $session->pass);
+    }
+
+    /**
+     * @return array<string, array{int, float, bool}>
+     */
+    public static function hundredPercentThresholdResults(): array
+    {
+        return [
+            'full marks pass' => [5, 100.0, true],
+            'one wrong answer fails' => [4, 80.0, false],
+        ];
     }
 
     public function test_four_of_five_correct_is_80_percent_and_passes_60_percent_threshold(): void
