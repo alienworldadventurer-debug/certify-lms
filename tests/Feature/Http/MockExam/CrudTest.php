@@ -9,53 +9,59 @@ use App\Models\MockExam;
 use App\Models\MockExamSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class CrudTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_can_create_mock_exam_as_draft(): void
+    #[DataProvider('validPassingScores')]
+    public function test_admin_can_create_mock_exam_as_draft(int $passingScore): void
     {
         $admin = User::factory()->admin()->create();
         $cert = Certification::factory()->published()->create();
 
-        $this->actingAs($admin)
+        $response = $this->actingAs($admin)
             ->post(route('admin.mock-exams.store'), [
                 'certification_id' => $cert->id,
                 'title' => '第 1 回 本番形式',
                 'description' => '本番試験を想定した模試',
                 'order' => 0,
-                'passing_score' => 60,
-            ])
-            ->assertRedirect();
+                'passing_score' => $passingScore,
+            ]);
 
         $mockExam = MockExam::firstOrFail();
+        $response->assertRedirect(route('admin.mock-exams.show', $mockExam))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', '模試マスタを作成しました。');
+        $this->assertDatabaseCount('mock_exams', 1);
+        $this->assertSame($passingScore, $mockExam->passing_score);
         $this->assertFalse($mockExam->is_published);
         $this->assertNull($mockExam->published_at);
         $this->assertSame($admin->id, $mockExam->created_by_user_id);
         $this->assertSame($admin->id, $mockExam->updated_by_user_id);
     }
 
-    public function test_admin_cannot_create_mock_exam_with_passing_score_over_100(): void
+    #[DataProvider('invalidPassingScorePayloads')]
+    public function test_admin_cannot_create_mock_exam_with_invalid_passing_score(array $passingScorePayload): void
     {
         $admin = User::factory()->admin()->create();
         $cert = Certification::factory()->published()->create();
 
         $response = $this->actingAs($admin)
             ->from(route('admin.mock-exams.create'))
-            ->post(route('admin.mock-exams.store'), [
+            ->post(route('admin.mock-exams.store'), array_merge([
                 'certification_id' => $cert->id,
                 'title' => '範囲外の合格点',
                 'description' => null,
                 'order' => 0,
-                'passing_score' => 101,
-            ]);
+            ], $passingScorePayload));
 
-        $response->assertSessionHasErrors('passing_score');
-        $this->assertDatabaseMissing('mock_exams', [
-            'title' => '範囲外の合格点',
-        ]);
+        $response->assertRedirect(route('admin.mock-exams.create'))
+            ->assertSessionHasErrors('passing_score')
+            ->assertSessionMissing('success');
+        $this->assertDatabaseCount('mock_exams', 0);
     }
 
     public function test_store_silently_drops_time_limit_minutes_field(): void
@@ -64,7 +70,7 @@ class CrudTest extends TestCase
         $cert = Certification::factory()->published()->create();
 
         // E-3: time_limit_minutes は受け取らない(silently drop)
-        $this->actingAs($admin)
+        $response = $this->actingAs($admin)
             ->post(route('admin.mock-exams.store'), [
                 'certification_id' => $cert->id,
                 'title' => '第 1 回',
@@ -72,10 +78,11 @@ class CrudTest extends TestCase
                 'order' => 0,
                 'passing_score' => 60,
                 'time_limit_minutes' => 90,
-            ])
-            ->assertRedirect();
+            ]);
 
         $mockExam = MockExam::firstOrFail();
+        $response->assertRedirect(route('admin.mock-exams.show', $mockExam))
+            ->assertSessionHas('success', '模試マスタを作成しました。');
         $this->assertArrayNotHasKey('time_limit_minutes', $mockExam->getAttributes());
     }
 
@@ -93,6 +100,8 @@ class CrudTest extends TestCase
                 'passing_score' => 60,
             ])
             ->assertForbidden();
+
+        $this->assertDatabaseCount('mock_exams', 0);
     }
 
     public function test_student_cannot_access_admin_mock_exams_index(): void
@@ -104,7 +113,8 @@ class CrudTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_admin_can_update_mock_exam_without_changing_certification(): void
+    #[DataProvider('validPassingScores')]
+    public function test_admin_can_update_mock_exam_without_changing_certification(int $passingScore): void
     {
         $admin = User::factory()->admin()->create();
         $mockExam = MockExam::factory()->create();
@@ -115,32 +125,88 @@ class CrudTest extends TestCase
                 'title' => '改題後',
                 'description' => '更新された説明',
                 'order' => 5,
-                'passing_score' => 80,
+                'passing_score' => $passingScore,
             ])
-            ->assertRedirect();
+            ->assertRedirect(route('admin.mock-exams.show', $mockExam))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', '模試マスタを更新しました。');
 
         $mockExam->refresh();
         $this->assertSame('改題後', $mockExam->title);
-        $this->assertSame(80, $mockExam->passing_score);
+        $this->assertSame($passingScore, $mockExam->passing_score);
         $this->assertSame($originalCertId, $mockExam->certification_id);
     }
 
-    public function test_admin_cannot_update_mock_exam_with_passing_score_over_100(): void
+    #[DataProvider('invalidPassingScorePayloads')]
+    public function test_admin_cannot_update_mock_exam_with_invalid_passing_score(array $passingScorePayload): void
     {
         $admin = User::factory()->admin()->create();
         $mockExam = MockExam::factory()->create(['passing_score' => 60]);
+        $originalAttributes = $mockExam->fresh()->getAttributes();
 
         $response = $this->actingAs($admin)
             ->from(route('admin.mock-exams.edit', $mockExam))
-            ->put(route('admin.mock-exams.update', $mockExam), [
-                'title' => $mockExam->title,
-                'description' => $mockExam->description,
-                'order' => $mockExam->order,
-                'passing_score' => 101,
-            ]);
+            ->put(route('admin.mock-exams.update', $mockExam), array_merge([
+                'title' => '保存されないタイトル',
+                'description' => '保存されない説明',
+                'order' => 5,
+            ], $passingScorePayload));
 
-        $response->assertSessionHasErrors('passing_score');
-        $this->assertSame(60, $mockExam->fresh()->passing_score);
+        $response->assertRedirect(route('admin.mock-exams.edit', $mockExam))
+            ->assertSessionHasErrors('passing_score')
+            ->assertSessionMissing('success');
+        $this->assertSame($originalAttributes, $mockExam->fresh()->getAttributes());
+    }
+
+    public function test_guest_cannot_create_mock_exam(): void
+    {
+        $cert = Certification::factory()->published()->create();
+
+        $this->post(route('admin.mock-exams.store'), [
+            'certification_id' => $cert->id,
+            'title' => '未認証の作成',
+            'order' => 0,
+            'passing_score' => 60,
+        ])
+            ->assertRedirect(route('login'))
+            ->assertSessionMissing('success');
+
+        $this->assertDatabaseCount('mock_exams', 0);
+    }
+
+    public function test_guest_cannot_update_mock_exam(): void
+    {
+        $mockExam = MockExam::factory()->create();
+        $originalAttributes = $mockExam->fresh()->getAttributes();
+
+        $this->put(route('admin.mock-exams.update', $mockExam), [
+            'title' => '未認証の更新',
+            'description' => '保存されない説明',
+            'order' => 5,
+            'passing_score' => 80,
+        ])
+            ->assertRedirect(route('login'))
+            ->assertSessionMissing('success');
+
+        $this->assertSame($originalAttributes, $mockExam->fresh()->getAttributes());
+    }
+
+    public function test_coach_cannot_update_mock_exam_for_unassigned_certification(): void
+    {
+        $coach = User::factory()->coach()->create();
+        $mockExam = MockExam::factory()->create();
+        $originalAttributes = $mockExam->fresh()->getAttributes();
+
+        $this->actingAs($coach)
+            ->putJson(route('admin.mock-exams.update', $mockExam), [
+                'title' => '担当外の更新',
+                'description' => '保存されない説明',
+                'order' => 5,
+                'passing_score' => 80,
+            ])
+            ->assertForbidden();
+
+        $this->assertSame($originalAttributes, $mockExam->fresh()->getAttributes());
     }
 
     public function test_destroy_rejects_published_mock_exam(): void
@@ -175,8 +241,39 @@ class CrudTest extends TestCase
 
         $this->actingAs($admin)
             ->delete(route('admin.mock-exams.destroy', $mockExam))
-            ->assertRedirect();
+            ->assertRedirect(route('admin.mock-exams.index'))
+            ->assertSessionHas('success', '模試マスタを削除しました。');
 
         $this->assertDatabaseMissing('mock_exams', ['id' => $mockExam->id]);
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function validPassingScores(): array
+    {
+        return [
+            'minimum' => [1],
+            'typical' => [60],
+            'maximum' => [100],
+        ];
+    }
+
+    /**
+     * @return array<string, array{array{passing_score?: mixed}}>
+     */
+    public static function invalidPassingScorePayloads(): array
+    {
+        return [
+            'missing' => [[]],
+            'empty' => [['passing_score' => '']],
+            'null' => [['passing_score' => null]],
+            'zero' => [['passing_score' => 0]],
+            'negative' => [['passing_score' => -1]],
+            'fraction' => [['passing_score' => 60.5]],
+            'text' => [['passing_score' => 'abc']],
+            'over maximum' => [['passing_score' => 101]],
+            'reported bug' => [['passing_score' => 150]],
+        ];
     }
 }
