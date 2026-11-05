@@ -51,6 +51,28 @@ class ChapterViewPolicyTest extends TestCase
         $this->assertFalse($result, '未受講の受講生は Chapter を閲覧できないはず');
     }
 
+    public function test_student_with_passed_enrollment_can_view_for_review(): void
+    {
+        $certification = Certification::factory()->published()->create();
+        $part = Part::factory()->for($certification)->published()->create();
+        $chapter = Chapter::factory()->for($part)->published()->create();
+        $student = User::factory()->student()->create();
+        Enrollment::factory()->for($student)->for($certification)->passed()->create();
+
+        $this->assertTrue((new ChapterViewPolicy)->view($student, $chapter));
+    }
+
+    public function test_student_with_failed_enrollment_cannot_view(): void
+    {
+        $certification = Certification::factory()->published()->create();
+        $part = Part::factory()->for($certification)->published()->create();
+        $chapter = Chapter::factory()->for($part)->published()->create();
+        $student = User::factory()->student()->create();
+        Enrollment::factory()->for($student)->for($certification)->failed()->create();
+
+        $this->assertFalse((new ChapterViewPolicy)->view($student, $chapter));
+    }
+
     public function test_coach_cannot_view(): void
     {
         // Arrange
@@ -62,5 +84,13 @@ class ChapterViewPolicyTest extends TestCase
 
         // Assert
         $this->assertFalse($result, 'コーチは ChapterView では弾かれる (Section 閲覧は別 Policy)');
+    }
+
+    public function test_admin_cannot_view(): void
+    {
+        $chapter = Chapter::factory()->published()->create();
+        $admin = User::factory()->admin()->create();
+
+        $this->assertFalse((new ChapterViewPolicy)->view($admin, $chapter));
     }
 }

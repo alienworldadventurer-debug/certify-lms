@@ -14,6 +14,7 @@ use App\Models\Part;
 use App\Models\Section;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -85,6 +86,9 @@ class BrowseControllerTest extends TestCase
         $response = $this->actingAs($student)->get(route('learning.parts.show', $part));
 
         $response->assertOk();
+        $response->assertViewIs('learning.parts.show');
+        $response->assertViewHas('part', $part);
+        $response->assertViewHas('chapters');
     }
 
     public function test_show_part_forbidden_for_non_enrolled_student(): void
@@ -106,6 +110,27 @@ class BrowseControllerTest extends TestCase
         $response = $this->actingAs($student)->get(route('learning.chapters.show', $chapter));
 
         $response->assertNotFound();
+    }
+
+    public function test_show_part_404_when_draft_part(): void
+    {
+        [$student, $certification] = $this->buildStudentAndCertification();
+        $part = Part::factory()->for($certification)->create(['status' => ContentStatus::Draft->value]);
+
+        $this->actingAs($student)
+            ->get(route('learning.parts.show', $part))
+            ->assertNotFound();
+    }
+
+    public function test_show_chapter_404_when_draft_chapter(): void
+    {
+        [$student, $certification] = $this->buildStudentAndCertification();
+        $part = Part::factory()->for($certification)->create(['status' => ContentStatus::Published->value]);
+        $chapter = Chapter::factory()->for($part)->create(['status' => ContentStatus::Draft->value]);
+
+        $this->actingAs($student)
+            ->get(route('learning.chapters.show', $chapter))
+            ->assertNotFound();
     }
 
     public function test_show_chapter_forbidden_for_non_enrolled_student(): void
@@ -132,6 +157,8 @@ class BrowseControllerTest extends TestCase
         $response = $this->actingAs($student)->get(route('learning.sections.show', $section));
 
         $response->assertOk();
+        $response->assertViewIs('learning.sections.show');
+        $response->assertViewHas('section', $section);
         $this->assertDatabaseHas('learning_sessions', [
             'user_id' => $student->id,
             'section_id' => $section->id,
@@ -166,7 +193,11 @@ class BrowseControllerTest extends TestCase
     {
         [$student, $certification, $section] = $this->buildSectionFor(EnrollmentStatus::Passed);
 
-        $this->actingAs($student)->get(route('learning.sections.show', $section))->assertOk();
+        $this->actingAs($student)
+            ->get(route('learning.sections.show', $section))
+            ->assertOk()
+            ->assertViewIs('learning.sections.show')
+            ->assertViewHas('section', $section);
     }
 
     public function test_show_section_for_failed_enrollment_returns_403(): void
@@ -179,6 +210,15 @@ class BrowseControllerTest extends TestCase
     public function test_show_part_404_when_certification_archived(): void
     {
         [$student, $part] = $this->buildArchivedCertificationPart();
+
+        $this->actingAs($student)
+            ->get(route('learning.parts.show', $part))
+            ->assertNotFound();
+    }
+
+    public function test_show_part_404_when_certification_draft(): void
+    {
+        [$student, $part] = $this->buildDraftCertificationPart();
 
         $this->actingAs($student)
             ->get(route('learning.parts.show', $part))
@@ -220,6 +260,16 @@ class BrowseControllerTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_show_chapter_404_when_certification_draft(): void
+    {
+        [$student, $part] = $this->buildDraftCertificationPart();
+        $chapter = Chapter::factory()->for($part)->create(['status' => ContentStatus::Published->value]);
+
+        $this->actingAs($student)
+            ->get(route('learning.chapters.show', $chapter))
+            ->assertNotFound();
+    }
+
     public function test_show_section_404_when_certification_archived(): void
     {
         [$student, $part] = $this->buildArchivedCertificationPart();
@@ -232,6 +282,161 @@ class BrowseControllerTest extends TestCase
         $this->actingAs($student)
             ->get(route('learning.sections.show', $section))
             ->assertNotFound();
+    }
+
+    public function test_show_section_404_when_certification_draft(): void
+    {
+        [$student, $part] = $this->buildDraftCertificationPart();
+        $chapter = Chapter::factory()->for($part)->create(['status' => ContentStatus::Published->value]);
+        $section = Section::factory()->for($chapter)->create([
+            'status' => ContentStatus::Published->value,
+            'body' => '# テスト本文',
+        ]);
+
+        $this->actingAs($student)
+            ->get(route('learning.sections.show', $section))
+            ->assertNotFound();
+
+        $this->assertDatabaseMissing('learning_sessions', [
+            'user_id' => $student->id,
+            'section_id' => $section->id,
+        ]);
+    }
+
+    public function test_show_section_404_when_draft_section(): void
+    {
+        [$student, $certification] = $this->buildStudentAndCertification();
+        $part = Part::factory()->for($certification)->create(['status' => ContentStatus::Published->value]);
+        $chapter = Chapter::factory()->for($part)->create(['status' => ContentStatus::Published->value]);
+        $section = Section::factory()->for($chapter)->create(['status' => ContentStatus::Draft->value]);
+
+        $this->actingAs($student)
+            ->get(route('learning.sections.show', $section))
+            ->assertNotFound();
+
+        $this->assertDatabaseMissing('learning_sessions', [
+            'user_id' => $student->id,
+            'section_id' => $section->id,
+        ]);
+    }
+
+    public function test_guest_is_redirected_to_login_when_accessing_part(): void
+    {
+        [$part] = $this->buildPublishedContent();
+
+        $this->get(route('learning.parts.show', $part))
+            ->assertRedirect(route('login'));
+    }
+
+    public function test_guest_is_redirected_to_login_when_accessing_chapter(): void
+    {
+        [, $chapter] = $this->buildPublishedContent();
+
+        $this->get(route('learning.chapters.show', $chapter))
+            ->assertRedirect(route('login'));
+    }
+
+    public function test_guest_is_redirected_to_login_when_accessing_section(): void
+    {
+        [, , $section] = $this->buildPublishedContent();
+
+        $this->get(route('learning.sections.show', $section))
+            ->assertRedirect(route('login'));
+    }
+
+    public function test_admin_cannot_view_learning_part(): void
+    {
+        [$part] = $this->buildPublishedContent();
+
+        $this->actingAs(User::factory()->admin()->create())
+            ->get(route('learning.parts.show', $part))
+            ->assertForbidden();
+    }
+
+    public function test_coach_cannot_view_learning_part(): void
+    {
+        [$part] = $this->buildPublishedContent();
+
+        $this->actingAs(User::factory()->coach()->create())
+            ->get(route('learning.parts.show', $part))
+            ->assertForbidden();
+    }
+
+    public function test_admin_cannot_view_learning_chapter(): void
+    {
+        [, $chapter] = $this->buildPublishedContent();
+
+        $this->actingAs(User::factory()->admin()->create())
+            ->get(route('learning.chapters.show', $chapter))
+            ->assertForbidden();
+    }
+
+    public function test_coach_cannot_view_learning_chapter(): void
+    {
+        [, $chapter] = $this->buildPublishedContent();
+
+        $this->actingAs(User::factory()->coach()->create())
+            ->get(route('learning.chapters.show', $chapter))
+            ->assertForbidden();
+    }
+
+    public function test_admin_cannot_view_learning_section(): void
+    {
+        [, , $section] = $this->buildPublishedContent();
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->get(route('learning.sections.show', $section))
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('learning_sessions', [
+            'user_id' => $admin->id,
+            'section_id' => $section->id,
+        ]);
+    }
+
+    public function test_coach_cannot_view_learning_section(): void
+    {
+        [, , $section] = $this->buildPublishedContent();
+        $coach = User::factory()->coach()->create();
+
+        $this->actingAs($coach)
+            ->get(route('learning.sections.show', $section))
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('learning_sessions', [
+            'user_id' => $coach->id,
+            'section_id' => $section->id,
+        ]);
+    }
+
+    public function test_nonexistent_part_returns_404(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($student)
+            ->get(route('learning.parts.show', ['part' => (string) Str::ulid()]))
+            ->assertNotFound();
+    }
+
+    public function test_nonexistent_chapter_returns_404(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($student)
+            ->get(route('learning.chapters.show', ['chapter' => (string) Str::ulid()]))
+            ->assertNotFound();
+    }
+
+    public function test_nonexistent_section_returns_404(): void
+    {
+        $student = User::factory()->student()->inProgress()->create();
+
+        $this->actingAs($student)
+            ->get(route('learning.sections.show', ['section' => (string) Str::ulid()]))
+            ->assertNotFound();
+
+        $this->assertDatabaseCount('learning_sessions', 0);
     }
 
     /**
@@ -275,5 +480,36 @@ class BrowseControllerTest extends TestCase
         $part = Part::factory()->for($certification)->create(['status' => ContentStatus::Published->value]);
 
         return [$student, $part];
+    }
+
+    /**
+     * 受講登録(learning)済みだが資格が下書き(draft)のシナリオ。配下 Part は Published。
+     *
+     * @return array{0: User, 1: Part}
+     */
+    private function buildDraftCertificationPart(): array
+    {
+        $student = User::factory()->student()->inProgress()->create();
+        $certification = Certification::factory()->draft()->create();
+        Enrollment::factory()->for($student)->for($certification)->learning()->create();
+        $part = Part::factory()->for($certification)->create(['status' => ContentStatus::Published->value]);
+
+        return [$student, $part];
+    }
+
+    /**
+     * @return array{0: Part, 1: Chapter, 2: Section}
+     */
+    private function buildPublishedContent(): array
+    {
+        $certification = Certification::factory()->published()->create();
+        $part = Part::factory()->for($certification)->create(['status' => ContentStatus::Published->value]);
+        $chapter = Chapter::factory()->for($part)->create(['status' => ContentStatus::Published->value]);
+        $section = Section::factory()->for($chapter)->create([
+            'status' => ContentStatus::Published->value,
+            'body' => '# テスト本文',
+        ]);
+
+        return [$part, $chapter, $section];
     }
 }
