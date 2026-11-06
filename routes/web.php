@@ -69,7 +69,7 @@ Route::get('/', function () {
 Route::get('/onboarding/{invitation}', [OnboardingController::class, 'show'])
     ->name('onboarding.show');
 Route::post('/onboarding/{invitation}', [OnboardingController::class, 'store'])
-    ->middleware('signed')
+    ->middleware(['signed', 'invitation.usable'])
     ->name('onboarding.store');
 
 // ============================================================
