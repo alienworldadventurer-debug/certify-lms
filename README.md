@@ -133,6 +133,25 @@ sail artisan queue:retry <uuid>      # 個別に再投入（uuid は queue:faile
 - 送信に失敗して上限回数を超えたジョブは `failed_jobs` テーブルに記録されます。原因を解消してから `queue:retry` で再投入してください。
 - 面談リマインダーの DB 通知は重複判定に使うため同期保存され、メールのみキュー経由で送信されます。
 
+## スケジューラー（面談リマインダー）
+
+面談の前日リマインダー（毎日 18:00）と 1 時間前リマインダー（5 分間隔）は、Laravel のスケジューラー（`app/Console/Kernel.php`）から実行されます。キューワーカーとは別に、スケジューラーも起動しておく必要があります。
+
+```bash
+sail artisan schedule:work    # ローカル開発用（起動したままにする）
+```
+
+動作確認は定期実行を待たず、コマンドを手動で実行できます。
+
+```bash
+sail artisan notifications:send-meeting-reminders --window=eve                # 翌日開始の予約済み面談が対象
+sail artisan notifications:send-meeting-reminders --window=one_hour_before    # 開始まで 60 分以内の予約済み面談が対象
+```
+
+- 同じ面談・同じ window の通知は重複判定により二重配信されません。
+- 確認用には、既存の面談の予約時刻を翌日または 1 時間以内に変更してください。
+- メールは非同期送信のため、キューワーカー（上記）も起動していないと届きません。
+
 ## テスト
 
 ```bash
