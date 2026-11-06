@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\InvitationTokenService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
@@ -172,6 +173,175 @@ class OnboardingTest extends TestCase
         $this->assertDatabaseHas('invitations', [
             'id' => $invitation->id,
             'status' => InvitationStatus::Accepted->value,
+        ]);
+    }
+
+    public function test_store_rejects_replay_without_overwriting_completed_account(): void
+    {
+        $invitation = $this->freshInvitation();
+        $postUrl = $this->postUrl($invitation);
+
+        $this->post($postUrl, [
+            'name' => '受講太郎',
+            'bio' => '最初の自己紹介',
+            'password' => 'secret-pass',
+            'password_confirmation' => 'secret-pass',
+        ])->assertRedirect(route('dashboard.index'));
+
+        auth()->logout();
+
+        $userFields = [
+            'name',
+            'bio',
+            'password',
+            'status',
+            'profile_setup_completed',
+            'email_verified_at',
+            'plan_started_at',
+            'plan_expires_at',
+            'updated_at',
+        ];
+        $userAttributes = array_intersect_key(
+            $invitation->user->fresh()->getAttributes(),
+            array_flip($userFields),
+        );
+        $invitationFields = [
+            'status',
+            'accepted_at',
+            'updated_at',
+        ];
+        $invitationAttributes = array_intersect_key(
+            $invitation->fresh()->getAttributes(),
+            array_flip($invitationFields),
+        );
+
+        $this->post($postUrl, [
+            'name' => '上書きされた名前',
+            'bio' => '上書きされた自己紹介',
+            'password' => 'replacement-pass',
+            'password_confirmation' => 'replacement-pass',
+        ])->assertStatus(410);
+
+        $this->assertGuest();
+        $this->assertSame(
+            $userAttributes,
+            array_intersect_key($invitation->user->fresh()->getAttributes(), array_flip($userFields)),
+        );
+        $this->assertSame(
+            $invitationAttributes,
+            array_intersect_key($invitation->fresh()->getAttributes(), array_flip($invitationFields)),
+        );
+        $this->assertDatabaseCount('user_status_logs', 1);
+        $this->assertDatabaseCount('meeting_quota_transactions', 1);
+    }
+
+    public function test_store_returns_gone_for_used_invitation_before_validating_input(): void
+    {
+        $invitation = $this->freshInvitation();
+        $postUrl = $this->postUrl($invitation);
+
+        $this->post($postUrl, [
+            'name' => '受講太郎',
+            'password' => 'secret-pass',
+            'password_confirmation' => 'secret-pass',
+        ])->assertRedirect(route('dashboard.index'));
+
+        auth()->logout();
+
+        $this->post($postUrl, [])
+            ->assertStatus(410)
+            ->assertSessionHasNoErrors();
+    }
+
+    public function test_coach_invitation_cannot_be_reused_after_onboarding(): void
+    {
+        $invitation = $this->freshInvitation(role: UserRole::Coach);
+        $showUrl = $this->signedShowUrl($invitation);
+        $postUrl = $this->postUrl($invitation);
+
+        $this->post($postUrl, [
+            'name' => 'コーチ太郎',
+            'password' => 'secret-pass',
+            'password_confirmation' => 'secret-pass',
+            'meeting_url' => 'https://meet.example.test/original',
+        ])->assertRedirect(route('dashboard.index'));
+
+        auth()->logout();
+
+        $userAttributes = array_intersect_key(
+            $invitation->user->fresh()->getAttributes(),
+            array_flip(['name', 'password', 'meeting_url', 'status', 'updated_at']),
+        );
+
+        $this->get($showUrl)
+            ->assertStatus(410)
+            ->assertViewIs('auth.invitation-invalid');
+
+        $this->post($postUrl, [
+            'name' => '上書きされたコーチ',
+            'password' => 'replacement-pass',
+            'password_confirmation' => 'replacement-pass',
+            'meeting_url' => 'https://meet.example.test/replacement',
+        ])->assertStatus(410);
+
+        $this->assertGuest();
+        $this->assertSame(
+            $userAttributes,
+            array_intersect_key(
+                $invitation->user->fresh()->getAttributes(),
+                array_flip(array_keys($userAttributes)),
+            ),
+        );
+        $this->assertDatabaseCount('meeting_quota_transactions', 0);
+    }
+
+    public function test_store_rejects_invitation_when_target_user_is_not_invited_before_validation(): void
+    {
+        foreach ([UserStatus::InProgress, UserStatus::Graduated, UserStatus::Withdrawn] as $status) {
+            $invitation = $this->freshInvitation();
+            $invitation->user->forceFill(['status' => $status])->save();
+
+            $this->post($this->postUrl($invitation), [])
+                ->assertStatus(410)
+                ->assertSessionHasNoErrors();
+
+            $this->assertSame($status, $invitation->user->fresh()->status);
+            $this->assertSame(InvitationStatus::Pending, $invitation->fresh()->status);
+        }
+    }
+
+    public function test_store_rejects_unsigned_and_unknown_invitation_requests(): void
+    {
+        $invitation = $this->freshInvitation();
+        $unsignedUrl = route('onboarding.store', ['invitation' => $invitation->id]);
+
+        $this->post($unsignedUrl, [])->assertForbidden();
+
+        $unknownInvitationId = (string) Str::ulid();
+        $unknownUrl = URL::temporarySignedRoute(
+            'onboarding.store',
+            now()->addDay(),
+            ['invitation' => $unknownInvitationId],
+        );
+
+        $this->get(route('onboarding.show', ['invitation' => $unknownInvitationId]))->assertNotFound();
+        $this->post($unknownUrl, [])->assertNotFound();
+    }
+
+    public function test_store_accepts_invitation_for_plan_with_zero_meeting_quota(): void
+    {
+        $plan = $this->plan(quota: 0);
+        $invitation = $this->freshInvitation(plan: $plan);
+
+        $this->post($this->postUrl($invitation), [
+            'name' => '受講太郎',
+            'password' => 'secret-pass',
+            'password_confirmation' => 'secret-pass',
+        ])->assertRedirect(route('dashboard.index'));
+
+        $this->assertSame(InvitationStatus::Accepted, $invitation->fresh()->status);
+        $this->assertDatabaseMissing('meeting_quota_transactions', [
+            'user_id' => $invitation->user_id,
         ]);
     }
 
