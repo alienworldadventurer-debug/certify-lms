@@ -16,6 +16,20 @@
 
 - Docker Desktop / Docker Compose
 - 開発環境は Laravel Sail で構築します（PHP コンテナ・MySQL・Mailpit・phpMyAdmin を起動）
+- Stripe の決済・Webhook の動作確認を行う場合のみ、[Stripe CLI](https://docs.stripe.com/stripe-cli) をホストにインストールし、`stripe login` を済ませてください
+
+## 外部サービスのキー
+
+以下の外部サービスは、キーを各自で取得して `.env` に設定する必要があります。キーが未設定でも基本機能は動作しますが、対応する機能は使えません。環境構築の前に取得しておくと手戻りを防げます。
+
+| サービス | 変数 | 必須か | 未設定時の影響 | 取得先 |
+| --- | --- | --- | --- | --- |
+| Google AI Studio（Gemini） | `GEMINI_API_KEY` | 任意 | AI 学習相談が使えません | [Google AI Studio](https://aistudio.google.com/) |
+| Stripe | `STRIPE_SECRET` / `STRIPE_WEBHOOK_SECRET` | 任意 | 追加面談の購入ができません | Stripe ダッシュボード（テストモード）/ Stripe CLI |
+| Google Cloud（OAuth） | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | 任意 | Google カレンダー連携が失敗します | [Google Cloud Console](https://console.cloud.google.com/) |
+| Pusher | `PUSHER_APP_ID` / `PUSHER_APP_KEY` / `PUSHER_APP_SECRET` / `PUSHER_APP_CLUSTER` | 任意 | チャットのリアルタイム反映がされません | [Pusher](https://pusher.com/) |
+
+各変数の詳細と動作確認の手順は、後述の「環境変数」を参照してください。
 
 ## 環境構築手順
 
@@ -32,11 +46,11 @@ cd <リポジトリ名>
 cp .env.example .env
 ```
 
-`.env.example` は Sail 向けに設定済みのため、コピーするだけでローカル開発を始められます（外部サービス連携のキーは後述）。
+`.env.example` は Sail 向けに設定済みのため、コピーするだけで基本機能のローカル開発を始められます。外部サービスのキーは未設定のままでも起動でき、対応する機能だけが使えなくなります（[外部サービスのキー](#外部サービスのキー)参照）。
 
 ### 3. 依存パッケージのインストール（初回のみ）
 
-`vendor/` がまだ無いため、初回のみ Docker 経由で Composer を実行します。
+`vendor/` がまだ無いため、初回のみ Docker 経由で Composer を実行します。Composer は依存関係の解決だけに使うため、PHP 8.5 の Sail 環境とは別のイメージ（`php84-composer`）を使用します（`--ignore-platform-reqs` で PHP バージョンの違いは無視されます）。
 
 ```bash
 docker run --rm \
@@ -183,11 +197,12 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 
 ## 環境変数
 
-`.env.example` をコピーするだけで、すべての機能がローカルで動作します（メールは Mailpit に配信されます）。
+`.env.example` をコピーするだけで、外部サービスのキーを必要としない機能はローカルで動作します（メールは Mailpit に配信されます）。キーが必要な機能は、以下の各項目でキーを設定してください。
 
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` — コーチの Google カレンダー連携に使用します。Google Cloud Console で OAuth クライアント（ウェブアプリケーション）を作成し、承認済みのリダイレクト URI に `GOOGLE_REDIRECT_URI` の値を登録してください。未設定の場合、連携操作は失敗します（面談予約自体は影響を受けません）。なお、連携で保存するアクセストークン・リフレッシュトークンは現状暗号化していません。本番運用ではトークンの暗号化を推奨します
 - `STRIPE_SECRET` / `STRIPE_WEBHOOK_SECRET` — 追加面談パックの Stripe Checkout 決済および Webhook 署名検証に使用します。Stripe ダッシュボードで取得したテスト用 API キー（`sk_test_...`）と Webhook 署名シークレット（`whsec_...`）を設定してください。未設定の場合、購入開始時に「決済画面の作成に失敗しました。」と表示され決済画面へ進めません
-- `PUSHER_*` — チャットのリアルタイム配信に使用します。有効にする場合は Pusher のキーを取得して設定し、`BROADCAST_DRIVER=pusher` に変更してください。未設定（既定の `BROADCAST_DRIVER=log`）でもメッセージの送受信自体は動作し、相手画面へのリアルタイム反映のみ行われません
+- `PUSHER_APP_ID` / `PUSHER_APP_KEY` / `PUSHER_APP_SECRET` / `PUSHER_APP_CLUSTER` — チャットのリアルタイム配信に使用します。Pusher ダッシュボードでアプリを作成し、上記の値を `.env` に設定したうえで、`BROADCAST_DRIVER=pusher` に変更してください。未設定（既定の `BROADCAST_DRIVER=log`）でもメッセージの送受信自体は動作し、相手画面へのリアルタイム反映のみ行われません
+  - `VITE_PUSHER_*` は `PUSHER_*` の値からビルド時に埋め込まれます。Pusher の値を変更した場合は `sail artisan config:clear` に加えて `sail npm run build`（開発中は `sail npm run dev` の再起動）を実行してください。`config:clear` だけでは反映されません
 - `DASHBOARD_ADMIN_CACHE_TTL` — 管理者ダッシュボードの集計（全体 KPI・認定ごとの修了率）をキャッシュする有効期間を秒数で指定します。既定値は `300`（5分）です。値を変更した後は `sail artisan config:clear` を実行してください。受講状態が変わると該当キャッシュは即時に破棄されるため、この値は再計算までの最大待ち時間の目安です
 - `GEMINI_API_KEY` / `GEMINI_MODEL` — 受講生向け AI 学習相談（Gemini チャットボット）に使用します。[Google AI Studio](https://aistudio.google.com/) で API キーを取得して `GEMINI_API_KEY` に設定してください。`GEMINI_MODEL` の既定値は `gemini-3.5-flash-lite` です。未設定の場合も画面は表示されますが、メッセージ送信時に「AI 相談機能は現在ご利用いただけません」と表示され、応答は得られません（質問も保存されません）
 - `AI_CHAT_ENABLED` — AI 学習相談機能全体の有効化スイッチです（`.env.example` では `true`、コード側の既定値は `false`）。`false` にすると、関連ルート（`/ai-chat` など）が 404 になり、フローティングウィジェットも表示されません。値を変更した後は `sail artisan config:clear` を実行してください
@@ -206,7 +221,7 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 
 ### Stripe Webhook（追加面談購入）の動作確認手順
 
-Stripe CLI を利用してローカル環境で決済完了や Webhook 受信の動作確認を行えます。
+Stripe CLI（「動作環境」参照）を利用してローカル環境で決済完了や Webhook 受信の動作確認を行えます。
 
 ```bash
 # 1. Stripe CLI でローカルへ Webhook イベントを転送
