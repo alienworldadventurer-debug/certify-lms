@@ -175,6 +175,65 @@ class OnboardingTest extends TestCase
         ]);
     }
 
+    public function test_store_rejects_replay_without_overwriting_completed_account(): void
+    {
+        $invitation = $this->freshInvitation();
+        $postUrl = $this->postUrl($invitation);
+
+        $this->post($postUrl, [
+            'name' => '受講太郎',
+            'bio' => '最初の自己紹介',
+            'password' => 'secret-pass',
+            'password_confirmation' => 'secret-pass',
+        ])->assertRedirect(route('dashboard.index'));
+
+        auth()->logout();
+
+        $userFields = [
+            'name',
+            'bio',
+            'password',
+            'status',
+            'profile_setup_completed',
+            'email_verified_at',
+            'plan_started_at',
+            'plan_expires_at',
+            'updated_at',
+        ];
+        $userAttributes = array_intersect_key(
+            $invitation->user->fresh()->getAttributes(),
+            array_flip($userFields),
+        );
+        $invitationFields = [
+            'status',
+            'accepted_at',
+            'updated_at',
+        ];
+        $invitationAttributes = array_intersect_key(
+            $invitation->fresh()->getAttributes(),
+            array_flip($invitationFields),
+        );
+
+        $this->post($postUrl, [
+            'name' => '上書きされた名前',
+            'bio' => '上書きされた自己紹介',
+            'password' => 'replacement-pass',
+            'password_confirmation' => 'replacement-pass',
+        ])->assertStatus(410);
+
+        $this->assertGuest();
+        $this->assertSame(
+            $userAttributes,
+            array_intersect_key($invitation->user->fresh()->getAttributes(), array_flip($userFields)),
+        );
+        $this->assertSame(
+            $invitationAttributes,
+            array_intersect_key($invitation->fresh()->getAttributes(), array_flip($invitationFields)),
+        );
+        $this->assertDatabaseCount('user_status_logs', 1);
+        $this->assertDatabaseCount('meeting_quota_transactions', 1);
+    }
+
     public function test_store_updates_existing_invited_user_to_in_progress(): void
     {
         $invitation = $this->freshInvitation();

@@ -14,8 +14,10 @@ use App\Models\Plan;
 use App\Models\User;
 use App\UseCases\Auth\OnboardAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -92,6 +94,58 @@ class OnboardActionTest extends TestCase
         $invitation->refresh();
         $this->assertSame(InvitationStatus::Accepted, $invitation->status);
         $this->assertNotNull($invitation->accepted_at);
+    }
+
+    public function test_rolls_back_onboarding_changes_when_invitation_update_fails(): void
+    {
+        [$invitation, $user] = $this->setupInvitedUser();
+        $user->refresh();
+        $invitation->refresh();
+
+        $userFields = [
+            'name',
+            'bio',
+            'password',
+            'status',
+            'profile_setup_completed',
+            'email_verified_at',
+            'plan_started_at',
+            'plan_expires_at',
+            'updated_at',
+        ];
+        $userAttributes = Arr::only($user->getAttributes(), $userFields);
+        $invitationFields = [
+            'status',
+            'accepted_at',
+            'updated_at',
+        ];
+        $invitationAttributes = Arr::only($invitation->getAttributes(), $invitationFields);
+
+        Invitation::updating(static function (Invitation $invitation): void {
+            throw new RuntimeException('Forced invitation update failure');
+        });
+
+        try {
+            app(OnboardAction::class)($invitation, [
+                'name' => '受講太郎',
+                'bio' => 'よろしくお願いします',
+                'password' => 'secret-pass',
+            ]);
+            $this->fail('招待の保存失敗時は例外が発生するはずです。');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Forced invitation update failure', $exception->getMessage());
+        } finally {
+            Invitation::flushEventListeners();
+        }
+
+        $this->assertGuest();
+        $this->assertSame($userAttributes, Arr::only($user->fresh()->getAttributes(), $userFields));
+        $this->assertSame(
+            $invitationAttributes,
+            Arr::only($invitation->fresh()->getAttributes(), $invitationFields),
+        );
+        $this->assertDatabaseCount('user_status_logs', 0);
+        $this->assertDatabaseCount('meeting_quota_transactions', 0);
     }
 
     public function test_sets_plan_started_at_and_expires_at_from_plan_duration(): void
