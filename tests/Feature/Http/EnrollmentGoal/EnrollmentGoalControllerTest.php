@@ -299,6 +299,7 @@ class EnrollmentGoalControllerTest extends TestCase
             User::factory()->student()->graduated()->create(),
             User::factory()->student()->withdrawn()->create(),
         ] as $inactiveStudent) {
+            $this->flushSession();
             $this->actingAs($inactiveStudent)
                 ->post('/enrollment-goals/'.Str::ulid().'/achieve')
                 ->assertForbidden();
