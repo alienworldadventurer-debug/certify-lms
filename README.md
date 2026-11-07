@@ -169,9 +169,14 @@ sail artisan notifications:send-meeting-reminders --window=one_hour_before    # 
 ## テスト
 
 ```bash
-sail artisan test                  # 全テスト実行
-sail artisan test --filter=Xxx    # クラス名・メソッド名で絞り込み
+sail artisan test                           # 全テスト実行
+sail artisan test --filter=Xxx             # クラス名・メソッド名で絞り込み
+sail artisan test --group=external          # 外部 API 連携テストのみ実行（Google/Gemini/Stripe）
+sail artisan test --exclude-group=external  # 外部 API 連携テストを除外して実行
 ```
+
+- テスト実行時は `Http::preventStrayRequests()` により、モックしていない外部への実通信が防止されています（[tests/TestCase.php](/home/ta2gu/laravel-checktest/certify-lms/tests/TestCase.php)）。
+- 外部 API 連携テストには `#[Group('external')]` が付与されています。
 
 ## コード整形
 
