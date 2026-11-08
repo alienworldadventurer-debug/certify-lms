@@ -16,7 +16,7 @@
 ## 動作環境
 
 - Docker Desktop / Docker Compose
-  - ※ホストマシンへの PHP / Node.js のインストールは不要です（すべて Docker 内で完結します）。
+    - ※ホストマシンへの PHP / Node.js のインストールは不要です（すべて Docker 内で完結します）。
 - 開発環境は Laravel Sail で構築します（PHP コンテナ・MySQL・Mailpit・phpMyAdmin を起動）
 - Stripe の決済・Webhook の動作確認を行う場合のみ、[Stripe CLI](https://docs.stripe.com/stripe-cli) をホストにインストールし、`stripe login` を済ませてください
 
@@ -197,8 +197,10 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 - Blade + Tailwind CSS + Vite（JavaScript は素の JS、フレームワーク不使用）
 - PHPUnit / Laravel Pint
 - league/commonmark（教材本文の Markdown レンダリング）
-- Pusher（チャットのリアルタイム配信）
+- Stripe（追加面談パックの決済）
+- Google Calendar API（コーチの面談予約カレンダー連携）
 - Google Gemini API（AI 学習相談チャットボット）
+- Pusher（チャットのリアルタイム配信）
 - mpdf/mpdf（修了証 PDF 出力）
 - Docker（Laravel Sail）
 
@@ -206,7 +208,7 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 
 `.env.example` をコピーするだけで、外部サービスのキーを必要としない機能はローカルで動作します（メールは Mailpit に配信されます）。キーが必要な機能は、以下の各項目でキーを設定してください。
 
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` — コーチの Google カレンダー連携に使用します。Google Cloud Console で OAuth クライアント（ウェブアプリケーション）を作成し、承認済みのリダイレクト URI に `GOOGLE_REDIRECT_URI` の値を登録してください。未設定の場合、連携操作は失敗します（面談予約自体は影響を受けません）。なお、連携で保存するアクセストークン・リフレッシュトークンは現状暗号化していません。本番運用ではトークンの暗号化を推奨します
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` — コーチの Google カレンダー連携に使用します。Google Cloud Console で Google Calendar API を有効化し、OAuth クライアント（ウェブアプリケーション）を作成してください。承認済みのリダイレクト URI には `http://localhost:8000/settings/google-calendar/callback`（`GOOGLE_REDIRECT_URI` の既定値）を登録します。未設定の場合、連携操作は失敗します（面談予約自体は影響を受けません）。なお、連携で保存するアクセストークン・リフレッシュトークンは現状暗号化していません。本番運用ではトークンの暗号化を推奨します
 - `STRIPE_SECRET` / `STRIPE_WEBHOOK_SECRET` — 追加面談パックの Stripe Checkout 決済および Webhook 署名検証に使用します。Stripe ダッシュボードで取得したテスト用 API キー（`sk_test_...`）と Webhook 署名シークレット（`whsec_...`）を設定してください。未設定の場合、購入開始時に「決済画面の作成に失敗しました。」と表示され決済画面へ進めません
 - `PUSHER_APP_ID` / `PUSHER_APP_KEY` / `PUSHER_APP_SECRET` / `PUSHER_APP_CLUSTER` — チャットのリアルタイム配信に使用します。Pusher ダッシュボードでアプリを作成し、上記の値を `.env` に設定したうえで、`BROADCAST_DRIVER=pusher` に変更してください。未設定（既定の `BROADCAST_DRIVER=log`）でもメッセージの送受信自体は動作し、相手画面へのリアルタイム反映のみ行われません
     - `VITE_PUSHER_*` は `PUSHER_*` の値からビルド時に埋め込まれます。Pusher の値を変更した場合は `sail artisan config:clear` に加えて `sail npm run build`（開発中は `sail npm run dev` の再起動）を実行してください。`config:clear` だけでは反映されません
@@ -218,6 +220,18 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 - `AI_CHAT_AUTO_TITLE_ENABLED` — 最初の AI 応答後に、AI に会話タイトルを付け直させるかどうかです（既定値: `true`）
 - `AI_CHAT_SYSTEM_PROMPT` — AI に与えるシステムプロンプトです。未設定時は `config/ai-chat.php` の既定文を使用します
 
+### Google カレンダー連携（コーチ面談予約）の動作確認手順
+
+1. Google Cloud Console で Google Calendar API を有効化し、OAuth 2.0 クライアント ID（ウェブアプリケーション）を作成します
+2. 承認済みのリダイレクト URI に `http://localhost:8000/settings/google-calendar/callback` を登録します
+3. `.env` の `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET` を設定し、`sail artisan config:clear` を実行します
+4. 未連携のコーチ（`coach2@certify-lms.test` など）でログインし、サイドバー「設定」→「面談設定」タブを開きます
+5. 「Googleカレンダーと連携する」をクリックし、Google アカウントの認可画面でアクセスを許可します
+6. 面談設定画面に戻り、「連携中（カレンダー ID）」のバッジが表示されることを確認します
+7. 「連携を解除する」をクリックし、未連携状態に戻ることを確認します
+
+※初期データ（シーダー投入時）では、`coach@certify-lms.test` はあらかじめ「連携中（ダミートークン）」として登録されているため、API キー未設定でも連携解除ボタンの表示や UI 状態の確認が可能です。
+
 ### AI 学習相談（Gemini チャットボット）の動作確認手順
 
 1. `.env` の `GEMINI_API_KEY` に API キーを設定し、`sail artisan config:clear` を実行します
@@ -226,24 +240,35 @@ sail bin pint --test     # 整形漏れの確認（CI 相当のチェック）
 
 `GEMINI_API_KEY` を空のままにして質問を送信すると、「送信に失敗しました。時間をおいて再度お試しください。」と表示され、応答が得られないことを確認できます。
 
-### Stripe Webhook（追加面談購入）の動作確認手順
+### Stripe 連携（追加面談購入・Webhook）の動作確認手順
 
-Stripe CLI（「動作環境」参照）を利用してローカル環境で決済から残数反映までの動作確認を行えます。
+Stripe Checkout による決済フローと、Stripe CLI を利用した Webhook による残面談回数の反映を確認します。
 
-1. Stripe CLI でローカルへ Webhook イベントを転送します（転送するイベントの指定が必須です）。
+#### 1. API キーと Webhook の準備
+
+1. Stripe ダッシュボードで取得したテスト用シークレットキー（`sk_test_...`）を `.env` の `STRIPE_SECRET` に設定します
+2. Stripe CLI でローカルへ Webhook イベントを転送します（転送するイベントの指定が必須です）
 
 ```bash
 stripe listen --events checkout.session.completed,checkout.session.expired,checkout.session.async_payment_failed,payment_intent.payment_failed,charge.refunded --forward-to localhost:8000/webhooks/stripe
 ```
 
-2. 表示された Webhook signing secret (`whsec_...`) を `.env` の `STRIPE_WEBHOOK_SECRET` に設定し、次のコマンドを実行します。
+3. ターミナルに表示された Webhook signing secret (`whsec_...`) を `.env` の `STRIPE_WEBHOOK_SECRET` に設定します
+4. 設定を反映するため、キャッシュをクリアします
 
 ```bash
 sail artisan config:clear
 ```
 
-3. アプリで追加面談パックの購入画面から決済を開始し、テストカード `4242 4242 4242 4242`（有効期限・CVC は任意の将来日・3 桁の値）で決済を完了する。その他のテストカードは [Stripe のテスト用カード一覧](https://docs.stripe.com/testing) を参照してください。
-4. `stripe listen` の画面に `checkout.session.completed` が届いたことを確認する
-5. 画面上の残数が増えていることを確認する
+#### 2. 購入・決済と残数反映の確認
+
+1. 受講中の受講生（`student@certify-lms.test`）でログインします
+2. ダッシュボードの受講プラン情報、または面談予約画面から「追加面談を購入する」を開きます（`/meeting-quota/checkout`）
+3. 公開中の面談パックを選択して「購入手続きへ進む」をクリックし、Stripe Checkout の外部決済画面へ遷移することを確認します
+4. テストカード `4242 4242 4242 4242`（有効期限・CVC は任意の将来日・3 桁の値）を入力して決済を完了します（その他のテストカードは [Stripe のテスト用カード一覧](https://docs.stripe.com/testing) を参照）
+5. 購入完了画面（`/meeting-quota/success`）へ自動でリダイレクトされ、`stripe listen` の画面に `checkout.session.completed` が届いたことを確認します
+6. ダッシュボードや面談予約画面に戻り、残面談回数が増加していることを確認します
+
+※Stripe 決済画面でキャンセルリンクをクリックして戻った場合、残面談回数が変化しないことも確認できます。
 
 新しい環境変数やセットアップ手順を追加した場合は、`.env.example` と本 README に追記し、チームの誰でも環境を再現できる状態を保ってください。
