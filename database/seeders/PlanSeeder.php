@@ -16,7 +16,8 @@ use Illuminate\Database\Seeder;
  *
  * **設計思想（Seeder 業界標準: 状態網羅 + 固定 + 多様な進捗）**:
  *
- * 1. Plan マスタを **status 網羅** で投入(published × 3 + draft × 1 + archived × 1)。
+ * 1. Plan マスタを **status 網羅** で投入(published × 3 + draft × 2 + archived × 1)。
+ *    draft のうち 1 件は受講者あり(削除不可)、もう 1 件は受講者なし(削除可能)を再現する。
  *    一覧画面のフィルタ・状態遷移ボタンの活性条件を実機確認するため。
  *
  * 2. `UserSeeder` が作った in_progress / graduated student に対し、**期限進捗を多様化**して Plan を紐づける。
@@ -89,6 +90,19 @@ class PlanSeeder extends Seeder
                 'duration_days' => 365,
                 'default_meeting_quota' => 36,
                 'sort_order' => 40,
+                'created_by_user_id' => $admin->id,
+                'updated_by_user_id' => $admin->id,
+            ])
+            ->create();
+
+        Plan::factory()
+            ->draft()
+            ->state([
+                'name' => '試作プラン(受講者なし)',
+                'description' => '削除ガードの動作確認用。受講者は紐づかない下書きプラン。',
+                'duration_days' => 30,
+                'default_meeting_quota' => 2,
+                'sort_order' => 50,
                 'created_by_user_id' => $admin->id,
                 'updated_by_user_id' => $admin->id,
             ])
