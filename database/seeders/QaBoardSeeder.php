@@ -147,7 +147,7 @@ class QaBoardSeeder extends Seeder
                 'certification' => $appliedInformation,
                 'student' => $students[1],
                 'title' => 'ER図の多対多関係を中間テーブルにする理由',
-                'body' => "多対多の関係を中間テーブルに分解する理由を、試験の問題文から読み取る方法が分かりません。",
+                'body' => '多対多の関係を中間テーブルに分解する理由を、試験の問題文から読み取る方法が分かりません。',
                 'status' => QaThreadStatus::Open,
                 'replies' => [
                     ['user' => $appliedCoach, 'body' => '1対多に分解できない（両側とも複数のレコードを参照する）ため、関連を表す中間テーブルを置きます。問題文に「複数の」「それぞれ」といった語があれば手掛かりです。'],
@@ -211,7 +211,7 @@ class QaBoardSeeder extends Seeder
                 'certification' => $bookkeepingInformation,
                 'student' => $students[1],
                 'title' => '決算の手続きの順番を教えてください',
-                'body' => "決算整理仕訳から繰越試算表までの流れを、試験でどう使うのか知りたいです。",
+                'body' => '決算整理仕訳から繰越試算表までの流れを、試験でどう使うのか知りたいです。',
                 'status' => QaThreadStatus::Resolved,
                 'replies' => [
                     ['user' => $bookkeepingCoach, 'body' => '決算整理仕訳、帳簿の締め切り、繰越試算表の作成の順に進めます。'],
@@ -223,7 +223,7 @@ class QaBoardSeeder extends Seeder
                 'certification' => $pmpInformation,
                 'student' => $students[1],
                 'title' => 'ステークホルダー分析はどのタイミングで行うのでしょうか',
-                'body' => "プロジェクト計画の中で行うのか、実行中に行うのか迷っています。",
+                'body' => 'プロジェクト計画の中で行うのか、実行中に行うのか迷っています。',
                 'status' => QaThreadStatus::Open,
                 'replies' => [],
                 'days_ago' => 1,
@@ -232,7 +232,7 @@ class QaBoardSeeder extends Seeder
                 'certification' => $pmpInformation,
                 'student' => $students[0],
                 'title' => 'アーンドバリュー(EV)の計算式を忘れてしまいました',
-                'body' => "EV の求め方と、PV や AC との関係を整理したいです。",
+                'body' => 'EV の求め方と、PV や AC との関係を整理したいです。',
                 'status' => QaThreadStatus::Open,
                 'replies' => [
                     ['user' => $pmpCoach, 'body' => 'EV は完成した作業の計画価値です。EV = BAC × 進捗率で求められます。'],
@@ -243,7 +243,7 @@ class QaBoardSeeder extends Seeder
                 'certification' => $pmpInformation,
                 'student' => $students[2],
                 'title' => 'スプリントレビューとレトロスペクティブの違いが分かりません',
-                'body' => "どちらも振り返りのイベントに見えて、目的の違いが説明できません。",
+                'body' => 'どちらも振り返りのイベントに見えて、目的の違いが説明できません。',
                 'status' => QaThreadStatus::Resolved,
                 'replies' => [
                     ['user' => $pmpCoach, 'body' => 'レビューは成果物をステークホルダーと確認する場、レトロスペクティブはチームの進め方を振り返る場です。'],
